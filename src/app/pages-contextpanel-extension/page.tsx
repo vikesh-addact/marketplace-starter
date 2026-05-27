@@ -303,26 +303,20 @@ function mapReferenceToMedia(reference: MediaReference, appContext?: Application
 }
 
 function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext): PageMediaItem[] {
-    const data = payload as {
-        data?: {
-            data?: Record<
-                string,
-                {
-                    id?: string;
-                    name?: string;
-                    path?: string;
-                    url?: string;
-                    width?: { value?: string };
-                    height?: { value?: string };
-                    size?: { value?: string };
-                    extension?: { value?: string };
-                    alt?: { value?: string };
-                } | null
-            >;
-        };
-    };
-
-    const itemsById = data.data?.data ?? {};
+    const itemsById = unwrapGraphqlData(payload) as Record<
+        string,
+        {
+            id?: string;
+            name?: string;
+            path?: string;
+            url?: string;
+            width?: { value?: string };
+            height?: { value?: string };
+            size?: { value?: string };
+            extension?: { value?: string };
+            alt?: { value?: string };
+        } | null
+    >;
 
     return references.map((reference, index) => {
         const item = itemsById[`media${index}`];
@@ -344,6 +338,16 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
             source: reference.source,
         };
     });
+}
+
+function unwrapGraphqlData(payload: unknown) {
+    const result = payload as {
+        data?: Record<string, unknown> & {
+            data?: Record<string, unknown>;
+        };
+    };
+
+    return result.data?.data ?? result.data ?? {};
 }
 
 function readGraphqlFields(item: unknown) {
@@ -416,10 +420,16 @@ function extractMediaReferencesFromDataSource(item: unknown, fallbackSource: str
 
         if (typeof value === 'object') {
             const valueRecord = value as Record<string, unknown>;
-            const id = safeText(valueRecord.id) || safeText(valueRecord.mediaId) || safeText(valueRecord.mediaid);
-            const url = safeText(valueRecord.src) || safeText(valueRecord.url) || safeText(valueRecord.imageUrl);
+            const id = safeText(valueRecord.mediaId) || safeText(valueRecord.mediaid);
+            const url =
+                safeText(valueRecord.src) ||
+                safeText(valueRecord.mediaUrl) ||
+                safeText(valueRecord.thumbnailUrl) ||
+                safeText(valueRecord.imageUrl) ||
+                safeText(valueRecord.url);
+            const isMediaUrl = /\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(url) || url.includes('/-/media/');
 
-            if (id || url) {
+            if (id || isMediaUrl) {
                 addReference({
                     id: id ? normalizeMediaId(id) : url,
                     url,
@@ -474,8 +484,7 @@ async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: Da
         },
     });
 
-    const data = result as { data?: { data?: Record<string, unknown> } };
-    const itemsByAlias = data.data?.data ?? {};
+    const itemsByAlias = unwrapGraphqlData(result) as Record<string, unknown>;
 
     return dataSources.flatMap((dataSource, index) => extractMediaReferencesFromDataSource(itemsByAlias[`dataSource${index}`], dataSource.source));
 }
