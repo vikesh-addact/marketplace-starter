@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import type { ApplicationContext, PagesContext } from "@sitecore-marketplace-sdk/client";
+import type { ApplicationContext, ClientSDK, PagesContext } from "@sitecore-marketplace-sdk/client";
 import { useMarketplaceClient } from "@/src/utils/hooks/useMarketplaceClient";
 
 type MediaIssue = "missingAlt" | "largeImage" | "badAspectRatio" | "unsupportedFormat";
@@ -21,53 +21,24 @@ interface PageMediaItem {
   source: string;
 }
 
-const supportedFormats = ["jpg", "jpeg", "png", "webp", "avif", "svg"];
-
-function createMockPageMedia(pageId?: string): PageMediaItem[] {
-  return [
-    {
-      id: `${pageId ?? "page"}-hero`,
-      name: "Page hero image",
-      previewUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=300&q=80",
-      width: 2200,
-      height: 980,
-      sizeKb: 1120,
-      format: "jpg",
-      altText: "",
-      source: "Hero rendering",
-    },
-    {
-      id: `${pageId ?? "page"}-promo`,
-      name: "Promo card image",
-      previewUrl: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=300&q=80",
-      width: 960,
-      height: 640,
-      sizeKb: 240,
-      format: "webp",
-      altText: "Modern office seating area",
-      source: "Promo card",
-    },
-    {
-      id: `${pageId ?? "page"}-logo-strip`,
-      name: "Partner strip",
-      previewUrl: "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=300&q=80",
-      width: 1600,
-      height: 360,
-      sizeKb: 780,
-      format: "gif",
-      altText: "Team discussing campaign metrics",
-      source: "Partner section",
-    },
-  ];
+interface MediaReference {
+  id: string;
+  url: string;
+  altText: string;
+  width: number;
+  height: number;
+  source: string;
 }
+
+const supportedFormats = ["jpg", "jpeg", "png", "webp", "avif", "svg"];
 
 function getMediaIssues(item: PageMediaItem): MediaIssue[] {
   const issues: MediaIssue[] = [];
-  const ratio = item.width / item.height;
+  const ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
 
   if (!item.altText.trim()) issues.push("missingAlt");
   if (item.sizeKb > 500 || item.width > 2000) issues.push("largeImage");
-  if (ratio > 2.6 || ratio < 0.55) issues.push("badAspectRatio");
+  if (ratio > 0 && (ratio > 2.6 || ratio < 0.55)) issues.push("badAspectRatio");
   if (!supportedFormats.includes(item.format.toLowerCase())) issues.push("unsupportedFormat");
 
   return issues;
@@ -110,10 +81,52 @@ function safeText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function extractPageMedia(context?: PagesContext): PageMediaItem[] {
+function toMediaUrl(url: string, appContext?: ApplicationContext) {
+  if (!url) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:")) {
+    return url;
+  }
+
+  const baseUrl = appContext?.url?.replace(/\/$/, "");
+  return baseUrl ? `${baseUrl}${url.startsWith("/") ? "" : "/"}${url}` : url;
+}
+
+function getFieldValue(record: Record<string, unknown>) {
+  return (
+    safeText(record.value) ||
+    safeText(record.rawValue) ||
+    safeText(record.fieldValue) ||
+    safeText(record.displayValue) ||
+    safeText(record.text)
+  );
+}
+
+function readAttribute(value: string, attributeName: string) {
+  const match = value.match(new RegExp(`${attributeName}\\s*=\\s*["']([^"']+)["']`, "i"));
+  return match?.[1] ?? "";
+}
+
+function normalizeMediaId(value: string) {
+  return value.replace(/[{}]/g, "").toUpperCase();
+}
+
+function extractPageMediaReferences(context?: PagesContext): MediaReference[] {
   const fields = context?.pageInfo?.fields;
-  const found: PageMediaItem[] = [];
+  const references: MediaReference[] = [];
   const seen = new Set<string>();
+
+  function addReference(reference: MediaReference) {
+    const uniqueKey = reference.id || reference.url;
+    if (!uniqueKey || seen.has(uniqueKey)) {
+      return;
+    }
+
+    seen.add(uniqueKey);
+    references.push(reference);
+  }
 
   function addCandidate(value: Record<string, unknown>, source: string) {
     const url =
@@ -121,25 +134,50 @@ function extractPageMedia(context?: PagesContext): PageMediaItem[] {
       safeText(value.url) ||
       safeText(value.href) ||
       safeText(value.mediaUrl) ||
-      safeText(value.thumbnailUrl);
+      safeText(value.thumbnailUrl) ||
+      safeText(value.imageUrl);
+    const id = safeText(value.id) || safeText(value.itemId) || safeText(value.mediaId) || safeText(value.mediaid);
+    const fieldValue = getFieldValue(value);
+    const xmlMediaId = readAttribute(fieldValue, "mediaid");
+    const xmlUrl = readAttribute(fieldValue, "src");
+    const xmlAlt = readAttribute(fieldValue, "alt");
+    const resolvedUrl = url || xmlUrl;
+    const resolvedId = id || xmlMediaId;
 
-    if (!url || seen.has(url) || !/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(url)) {
+    if (!resolvedUrl && !resolvedId) {
       return;
     }
 
-    seen.add(url);
-    const name = safeText(value.alt) || safeText(value.name) || url.split("/").pop()?.split("?")[0] || "Page media";
-    const extension = url.split("?")[0].split(".").pop() || "unknown";
+    if (resolvedUrl && !/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(resolvedUrl) && !resolvedUrl.includes("/-/media/")) {
+      return;
+    }
 
-    found.push({
-      id: safeText(value.id) || url,
-      name,
-      previewUrl: url,
-      width: Number(value.width) || 0,
-      height: Number(value.height) || 0,
-      sizeKb: Number(value.sizeKb) || Number(value.size) || 0,
-      format: extension,
-      altText: safeText(value.alt) || safeText(value.altText),
+    addReference({
+      id: resolvedId ? normalizeMediaId(resolvedId) : resolvedUrl,
+      url: resolvedUrl,
+      altText: safeText(value.alt) || safeText(value.altText) || xmlAlt,
+      width: Number(value.width) || Number(readAttribute(fieldValue, "width")) || 0,
+      height: Number(value.height) || Number(readAttribute(fieldValue, "height")) || 0,
+      source,
+    });
+  }
+
+  function addStringCandidates(value: string, source: string) {
+    const urls = value.match(/(?:https?:\/\/|\/)[^\s"'<>]+\.(?:avif|gif|jpe?g|png|svg|webp)(?:\?[^\s"'<>]*)?/gi) ?? [];
+    urls.forEach((url) => addReference({ id: url, url, altText: "", width: 0, height: 0, source }));
+
+    if (!/<image\s/i.test(value)) {
+      return;
+    }
+
+    const mediaId = readAttribute(value, "mediaid");
+    const url = readAttribute(value, "src");
+    addReference({
+      id: mediaId ? normalizeMediaId(mediaId) : url,
+      url,
+      altText: readAttribute(value, "alt"),
+      width: Number(readAttribute(value, "width")) || 0,
+      height: Number(readAttribute(value, "height")) || 0,
       source,
     });
   }
@@ -150,8 +188,7 @@ function extractPageMedia(context?: PagesContext): PageMediaItem[] {
     }
 
     if (typeof value === "string") {
-      const matches = value.match(/https?:\/\/[^\s"'<>]+\.(?:avif|gif|jpe?g|png|svg|webp)(?:\?[^\s"'<>]*)?/gi) ?? [];
-      matches.forEach((url) => addCandidate({ url }, source));
+      addStringCandidates(value, source);
       return;
     }
 
@@ -170,7 +207,115 @@ function extractPageMedia(context?: PagesContext): PageMediaItem[] {
   walk(fields, "Page fields");
   walk(context?.pageInfo?.presentationDetails, "Presentation details");
 
-  return found;
+  return references;
+}
+
+function mapReferenceToMedia(reference: MediaReference, appContext?: ApplicationContext): PageMediaItem {
+  const previewUrl = toMediaUrl(reference.url, appContext);
+  const fileName = previewUrl.split("?")[0].split("/").pop() || reference.id || "Page media";
+  const extension = fileName.includes(".") ? fileName.split(".").pop() || "unknown" : "unknown";
+
+  return {
+    id: reference.id || previewUrl,
+    name: fileName,
+    previewUrl,
+    width: reference.width,
+    height: reference.height,
+    sizeKb: 0,
+    format: extension,
+    altText: reference.altText,
+    source: reference.source,
+  };
+}
+
+function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext): PageMediaItem[] {
+  const data = payload as {
+    data?: {
+      data?: Record<
+        string,
+        | {
+            id?: string;
+            name?: string;
+            path?: string;
+            url?: string;
+            width?: { value?: string };
+            height?: { value?: string };
+            size?: { value?: string };
+            extension?: { value?: string };
+            alt?: { value?: string };
+          }
+        | null
+      >;
+    };
+  };
+
+  const itemsById = data.data?.data ?? {};
+
+  return references.map((reference, index) => {
+    const item = itemsById[`media${index}`];
+    if (!item) {
+      return mapReferenceToMedia(reference, appContext);
+    }
+
+    const previewUrl = toMediaUrl(item.url || reference.url, appContext);
+
+    return {
+      id: item.id ?? reference.id,
+      name: item.name ?? reference.id ?? "Page media",
+      previewUrl,
+      width: Number(item.width?.value) || reference.width,
+      height: Number(item.height?.value) || reference.height,
+      sizeKb: Math.round((Number(item.size?.value) || 0) / 1024),
+      format: item.extension?.value?.replace(".", "") || previewUrl.split("?")[0].split(".").pop() || "unknown",
+      altText: reference.altText || item.alt?.value || "",
+      source: reference.source,
+    };
+  });
+}
+
+async function fetchPageMediaDetails(
+  client: ClientSDK,
+  references: MediaReference[],
+  language?: string,
+  appContext?: ApplicationContext,
+) {
+  const mediaIds = references
+    .map((reference, originalIndex) => ({ ...reference, originalIndex }))
+    .filter((reference) => reference.id && !reference.id.startsWith("/") && !reference.id.startsWith("http"));
+
+  if (mediaIds.length === 0) {
+    return references.map((reference) => mapReferenceToMedia(reference, appContext));
+  }
+
+  const query = `
+    query PageMediaInspectorItems {
+      ${mediaIds
+        .map(
+          (reference) => `
+            media${reference.originalIndex}: item(path: "{${reference.id}}", language: "${language ?? "en"}") {
+              id
+              name
+              path
+              url
+              width: field(name: "Width") { value }
+              height: field(name: "Height") { value }
+              size: field(name: "Size") { value }
+              extension: field(name: "Extension") { value }
+              alt: field(name: "Alt") { value }
+            }
+          `,
+        )
+        .join("\n")}
+    }
+  `;
+
+  const result = await client.mutate("xmc.authoring.graphql", {
+    params: {
+      body: { query },
+    },
+  });
+
+  return mapGraphqlMediaDetails(result, references, appContext);
 }
 
 async function mockApplyAction(item: PageMediaItem, action: MediaAction): Promise<PageMediaItem> {
@@ -293,20 +438,32 @@ function PagesContextPanel() {
 
   useEffect(() => {
     async function refreshPageMedia() {
-      if (!pagesContext) {
+      if (!pagesContext || !client) {
         return;
       }
 
       setIsLoading(true);
-      await new Promise((resolve) => setTimeout(resolve, 180));
-      const extractedMedia = extractPageMedia(pagesContext);
-      setPageMedia(extractedMedia.length > 0 ? extractedMedia : createMockPageMedia(pagesContext.pageInfo?.id));
-      setActionStates({});
-      setIsLoading(false);
+      const mediaReferences = extractPageMediaReferences(pagesContext);
+
+      try {
+        const media = await fetchPageMediaDetails(
+          client,
+          mediaReferences,
+          pagesContext.pageInfo?.language,
+          appContext,
+        );
+        setPageMedia(media);
+      } catch (mediaError) {
+        console.error("Error retrieving page media details:", mediaError);
+        setPageMedia(mediaReferences.map((reference) => mapReferenceToMedia(reference, appContext)));
+      } finally {
+        setActionStates({});
+        setIsLoading(false);
+      }
     }
 
     refreshPageMedia();
-  }, [pagesContext]);
+  }, [appContext, client, pagesContext]);
 
   useEffect(() => {
     if (error) {
@@ -361,12 +518,19 @@ function PagesContextPanel() {
         <span style={styles.eyebrow}>{appContext?.name ?? "Media Optimizer"}</span>
         <h1 style={styles.title}>Page Media Inspector</h1>
         <p style={styles.pageName}>{pagesContext?.pageInfo?.name ?? "Waiting for page context"}</p>
+        {pagesContext?.pageInfo && (
+          <p style={styles.contextLine}>
+            {pagesContext.pageInfo.path} / {pagesContext.pageInfo.language}
+          </p>
+        )}
       </header>
 
       {!isInitialized || isLoading ? (
         <div style={styles.stateBox}>Inspecting current page media...</div>
       ) : analyzedMedia.length === 0 ? (
-        <div style={styles.stateBox}>No page media was detected.</div>
+        <div style={styles.stateBox}>
+          No page media was detected in the current project page context.
+        </div>
       ) : (
         <>
           <section style={styles.scoreCard}>
@@ -474,6 +638,14 @@ const styles: Record<string, CSSProperties> = {
     color: "#64748b",
     fontSize: "13px",
     margin: 0,
+  },
+  contextLine: {
+    color: "#94a3b8",
+    fontSize: "12px",
+    margin: "4px 0 0",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   scoreCard: {
     alignItems: "center",
