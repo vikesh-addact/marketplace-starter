@@ -23,6 +23,16 @@ interface MediaItem {
 
 const supportedFormats = ["jpg", "jpeg", "png", "webp", "avif", "svg"];
 
+function getSitecoreContextId(appContext?: ApplicationContext) {
+  const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
+  return resource?.context?.preview ?? resource?.context?.live ?? resource?.resourceId ?? "";
+}
+
+function getGraphqlQueryParams(appContext?: ApplicationContext) {
+  const sitecoreContextId = getSitecoreContextId(appContext);
+  return sitecoreContextId ? { sitecoreContextId } : undefined;
+}
+
 function getMediaIssues(item: MediaItem): MediaIssue[] {
   const issues: MediaIssue[] = [];
   const ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
@@ -82,6 +92,20 @@ function formatSize(sizeKb: number) {
 function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
   const data = payload as {
     data?: {
+      search?: {
+        results?: Array<{
+          id?: string;
+          name?: string;
+          path?: string;
+          url?: string;
+          field?: { value?: string };
+          width?: { value?: string };
+          height?: { value?: string };
+          size?: { value?: string };
+          extension?: { value?: string };
+          alt?: { value?: string };
+        }>;
+      };
       data?: {
         search?: {
           results?: Array<{
@@ -101,7 +125,7 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
     };
   };
 
-  return (data.data?.data?.search?.results ?? []).map((item, index) => ({
+  return (data.data?.data?.search?.results ?? data.data?.search?.results ?? []).map((item, index) => ({
     id: item.id ?? `media-${index}`,
     name: item.name ?? `Media ${index + 1}`,
     thumbnailUrl: item.url ?? "",
@@ -180,10 +204,20 @@ function StandaloneExtension() {
         return;
       }
 
+      let loadedAppContext: ApplicationContext | undefined;
+
       try {
         const contextResult = await client.query("application.context");
         console.log("Success retrieving application.context:", contextResult.data);
+        loadedAppContext = contextResult.data;
         setAppContext(contextResult.data);
+
+        if (!getSitecoreContextId(loadedAppContext)) {
+          setMediaItems([]);
+          setMediaLoadMessage("Project media could not be loaded because application.context has no Sitecore context ID.");
+          setIsLoadingMedia(false);
+          return;
+        }
       } catch (contextError) {
         console.error("Error retrieving application.context:", contextError);
       }
@@ -192,6 +226,7 @@ function StandaloneExtension() {
         setIsLoadingMedia(true);
         const mediaResult = await client.mutate("xmc.authoring.graphql", {
           params: {
+            query: getGraphqlQueryParams(loadedAppContext),
             body: {
               query: `
                 query MediaOptimizerItems {

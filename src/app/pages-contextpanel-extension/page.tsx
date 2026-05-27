@@ -124,6 +124,16 @@ function normalizeItemId(value: string) {
     return value.replace(/[{}]/g, '').toUpperCase();
 }
 
+function getSitecoreContextId(appContext?: ApplicationContext) {
+    const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
+    return resource?.context?.preview ?? resource?.context?.live ?? resource?.resourceId ?? '';
+}
+
+function getGraphqlQueryParams(appContext?: ApplicationContext) {
+    const sitecoreContextId = getSitecoreContextId(appContext);
+    return sitecoreContextId ? { sitecoreContextId } : undefined;
+}
+
 function parsePresentationDetails(value: unknown) {
     if (!value) {
         return undefined;
@@ -143,7 +153,17 @@ function parsePresentationDetails(value: unknown) {
 
 function extractDataSourceReferences(context?: PagesContext): DataSourceReference[] {
     const pageInfo = getCurrentPageInfo(context);
-    const presentationDetails = parsePresentationDetails(pageInfo?.presentationDetails);
+    const presentationDetails = parsePresentationDetails(pageInfo?.presentationDetails) as
+        | {
+              devices?: Array<{
+                  renderings?: Array<{
+                      dataSource?: string;
+                      instanceId?: string;
+                      placeholderKey?: string;
+                  }>;
+              }>;
+          }
+        | undefined;
     const references: DataSourceReference[] = [];
     const seen = new Set<string>();
 
@@ -161,27 +181,12 @@ function extractDataSourceReferences(context?: PagesContext): DataSourceReferenc
         references.push({ id: normalizedId, source });
     }
 
-    function walk(value: unknown, source: string) {
-        if (!value) {
-            return;
-        }
-
-        if (Array.isArray(value)) {
-            value.forEach((entry) => walk(entry, source));
-            return;
-        }
-
-        if (typeof value !== 'object') {
-            return;
-        }
-
-        const record = value as Record<string, unknown>;
-        const renderingSource = safeText(record.placeholderKey) || safeText(record.instanceId) || source;
-        addDataSource(safeText(record.dataSource), `Data source / ${renderingSource}`);
-        Object.entries(record).forEach(([key, entry]) => walk(entry, key));
-    }
-
-    walk(presentationDetails, 'Presentation details');
+    presentationDetails?.devices?.forEach((device) => {
+        device.renderings?.forEach((rendering) => {
+            const renderingSource = rendering.placeholderKey || rendering.instanceId || 'rendering';
+            addDataSource(rendering.dataSource ?? '', `Data source / ${renderingSource}`);
+        });
+    });
 
     return references;
 }
@@ -210,7 +215,7 @@ function extractPageMediaReferences(context?: PagesContext): MediaReference[] {
             safeText(value.mediaUrl) ||
             safeText(value.thumbnailUrl) ||
             safeText(value.imageUrl);
-        const id = safeText(value.id) || safeText(value.itemId) || safeText(value.mediaId) || safeText(value.mediaid);
+        const id = safeText(value.mediaId) || safeText(value.mediaid);
         const fieldValue = getFieldValue(value);
         const xmlMediaId = readAttribute(fieldValue, 'mediaid');
         const xmlUrl = readAttribute(fieldValue, 'src');
@@ -279,7 +284,6 @@ function extractPageMediaReferences(context?: PagesContext): MediaReference[] {
     }
 
     walk(fields, 'Page fields');
-    walk(parsePresentationDetails(pageInfo?.presentationDetails), 'Presentation details');
 
     return references;
 }
@@ -302,6 +306,16 @@ function mapReferenceToMedia(reference: MediaReference, appContext?: Application
     };
 }
 
+function hasMediaLocator(reference: MediaReference) {
+    return Boolean(
+        reference.url &&
+            (/^https?:\/\//i.test(reference.url) ||
+                reference.url.startsWith('/') ||
+                /\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(reference.url) ||
+                reference.url.includes('/-/media/')),
+    );
+}
+
 function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext): PageMediaItem[] {
     const itemsById = unwrapGraphqlData(payload) as Record<
         string,
@@ -320,8 +334,12 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
 
     return references.map((reference, index) => {
         const item = itemsById[`media${index}`];
-        if (!item) {
+        if (!item && hasMediaLocator(reference)) {
             return mapReferenceToMedia(reference, appContext);
+        }
+
+        if (!item) {
+            return undefined;
         }
 
         const previewUrl = toMediaUrl(item.url || reference.url, appContext);
@@ -337,7 +355,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
             altText: reference.altText || item.alt?.value || '',
             source: reference.source,
         };
-    });
+    }).filter((item): item is PageMediaItem => Boolean(item?.previewUrl));
 }
 
 function unwrapGraphqlData(payload: unknown) {
@@ -452,7 +470,7 @@ function extractMediaReferencesFromDataSource(item: unknown, fallbackSource: str
     return references;
 }
 
-async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: DataSourceReference[], language?: string) {
+async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: DataSourceReference[], language?: string, appContext?: ApplicationContext) {
     if (dataSources.length === 0) {
         return [];
     }
@@ -480,6 +498,7 @@ async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: Da
 
     const result = await client.mutate('xmc.authoring.graphql', {
         params: {
+            query: getGraphqlQueryParams(appContext),
             body: { query },
         },
     });
@@ -495,7 +514,7 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
         .filter((reference) => reference.id && !reference.id.startsWith('/') && !reference.id.startsWith('http'));
 
     if (mediaIds.length === 0) {
-        return references.map((reference) => mapReferenceToMedia(reference, appContext));
+        return references.filter(hasMediaLocator).map((reference) => mapReferenceToMedia(reference, appContext));
     }
 
     const query = `
@@ -522,6 +541,7 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
 
     const result = await client.mutate('xmc.authoring.graphql', {
         params: {
+            query: getGraphqlQueryParams(appContext),
             body: { query },
         },
     });
@@ -633,7 +653,7 @@ function PagesContextPanel() {
 
     useEffect(() => {
         async function refreshPageMedia() {
-            if (!pagesContext || !client) {
+            if (!pagesContext || !client || !appContext) {
                 return;
             }
 
@@ -641,9 +661,18 @@ function PagesContextPanel() {
             const pageInfo = getCurrentPageInfo(pagesContext);
             const pageMediaReferences = extractPageMediaReferences(pagesContext);
             const dataSourceReferences = extractDataSourceReferences(pagesContext);
+            const sitecoreContextId = getSitecoreContextId(appContext);
+
+            if (!sitecoreContextId) {
+                console.error('No Sitecore context ID was found in application.context resourceAccess/resources.');
+                setPageMedia(pageMediaReferences.map((reference) => mapReferenceToMedia(reference, appContext)));
+                setActionStates({});
+                setIsLoading(false);
+                return;
+            }
 
             try {
-                const dataSourceMediaReferences = await fetchDataSourceMediaReferences(client, dataSourceReferences, pageInfo?.language);
+                const dataSourceMediaReferences = await fetchDataSourceMediaReferences(client, dataSourceReferences, pageInfo?.language, appContext);
                 const mediaReferences = [...pageMediaReferences, ...dataSourceMediaReferences];
                 const media = await fetchPageMediaDetails(client, mediaReferences, pageInfo?.language, appContext);
                 setPageMedia(media);
