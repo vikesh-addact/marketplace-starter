@@ -23,56 +23,9 @@ interface MediaItem {
 
 const supportedFormats = ["jpg", "jpeg", "png", "webp", "avif", "svg"];
 
-const mockMediaItems: MediaItem[] = [
-  {
-    id: "hero-banner",
-    name: "Homepage hero banner",
-    thumbnailUrl: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=360&q=80",
-    width: 2400,
-    height: 900,
-    sizeKb: 1280,
-    format: "jpg",
-    altText: "Team workspace with laptops",
-    path: "/sitecore/media library/project/home/hero-banner",
-  },
-  {
-    id: "product-card",
-    name: "Product card image",
-    thumbnailUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=360&q=80",
-    width: 1200,
-    height: 1200,
-    sizeKb: 420,
-    format: "png",
-    altText: "",
-    path: "/sitecore/media library/project/products/product-card",
-  },
-  {
-    id: "landing-illustration",
-    name: "Landing illustration",
-    thumbnailUrl: "https://images.unsplash.com/photo-1551434678-e076c223a692?auto=format&fit=crop&w=360&q=80",
-    width: 1600,
-    height: 500,
-    sizeKb: 960,
-    format: "gif",
-    altText: "Planning board on a table",
-    path: "/sitecore/media library/project/landing/illustration",
-  },
-  {
-    id: "feature-photo",
-    name: "Feature photo",
-    thumbnailUrl: "https://images.unsplash.com/photo-1483058712412-4245e9b90334?auto=format&fit=crop&w=360&q=80",
-    width: 1440,
-    height: 960,
-    sizeKb: 290,
-    format: "webp",
-    altText: "Desk with computer and notebook",
-    path: "/sitecore/media library/project/features/desk",
-  },
-];
-
 function getMediaIssues(item: MediaItem): MediaIssue[] {
   const issues: MediaIssue[] = [];
-  const ratio = item.width / item.height;
+  const ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
 
   if (!item.altText.trim()) {
     issues.push("missingAlt");
@@ -82,7 +35,7 @@ function getMediaIssues(item: MediaItem): MediaIssue[] {
     issues.push("largeImage");
   }
 
-  if (ratio > 2.6 || ratio < 0.55) {
+  if (ratio > 0 && (ratio > 2.6 || ratio < 0.55)) {
     issues.push("badAspectRatio");
   }
 
@@ -216,6 +169,7 @@ function StandaloneExtension() {
   const [appContext, setAppContext] = useState<ApplicationContext>();
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isLoadingMedia, setIsLoadingMedia] = useState(true);
+  const [mediaLoadMessage, setMediaLoadMessage] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "needsWork" | "missingAlt" | "largeImage">("all");
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
@@ -264,10 +218,12 @@ function StandaloneExtension() {
           },
         });
         const items = mapGraphqlMediaItems(mediaResult).filter((item) => item.thumbnailUrl || item.name);
-        setMediaItems(items.length > 0 ? items : mockMediaItems);
+        setMediaItems(items);
+        setMediaLoadMessage(items.length > 0 ? "" : "No media items were returned from the project media library.");
       } catch (mediaError) {
-        console.warn("Using mock media items because the media API is unavailable:", mediaError);
-        setMediaItems(mockMediaItems);
+        console.error("Error retrieving project media items:", mediaError);
+        setMediaItems([]);
+        setMediaLoadMessage("Project media could not be loaded from the Sitecore Authoring API.");
       } finally {
         setIsLoadingMedia(false);
       }
@@ -378,7 +334,7 @@ function StandaloneExtension() {
           </section>
 
           {filteredItems.length === 0 ? (
-            <section style={styles.statePanel}>No media items match the current filters.</section>
+            <section style={styles.statePanel}>{mediaLoadMessage || "No media items match the current filters."}</section>
           ) : (
             <section style={styles.tableWrap}>
               <table style={styles.table}>
