@@ -35,6 +35,12 @@ interface DataSourceReference {
     source: string;
 }
 
+interface HostStateContext {
+    xmCloudTenantInfo?: {
+        url?: string;
+    };
+}
+
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 
 function getMediaIssues(item: PageMediaItem): MediaIssue[] {
@@ -86,7 +92,7 @@ function safeText(value: unknown): string {
     return typeof value === 'string' ? value : '';
 }
 
-function toMediaUrl(url: string, appContext?: ApplicationContext) {
+function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = '') {
     if (!url) {
         return '';
     }
@@ -95,12 +101,14 @@ function toMediaUrl(url: string, appContext?: ApplicationContext) {
         return url;
     }
 
+    const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
+
     if (url.startsWith('/')) {
-        return url;
+        return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
     }
 
     const baseUrl = appContext?.url?.replace(/\/$/, '');
-    return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${url}` : url;
+    return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
 }
 
 function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
@@ -119,6 +127,10 @@ function mediaPathToUrlWithOrigin(path: string, extension: string, origin: strin
     const normalizedExtension = extension.replace('.', '').toLowerCase();
     const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
 
+    if (!origin) {
+        return '';
+    }
+
     return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
 }
 
@@ -133,6 +145,20 @@ function getMediaOrigin(references: MediaReference[]) {
         return new URL(absoluteMediaUrl).origin;
     } catch {
         return '';
+    }
+}
+
+function getHostMediaOrigin(hostState?: HostStateContext) {
+    const hostUrl = hostState?.xmCloudTenantInfo?.url;
+
+    if (!hostUrl) {
+        return '';
+    }
+
+    try {
+        return new URL(hostUrl).origin;
+    } catch {
+        return hostUrl.replace(/\/$/, '');
     }
 }
 
@@ -336,8 +362,8 @@ function extractPageMediaReferences(context?: PagesContext): MediaReference[] {
     return references;
 }
 
-function mapReferenceToMedia(reference: MediaReference, appContext?: ApplicationContext): PageMediaItem {
-    const previewUrl = toMediaUrl(reference.url, appContext);
+function mapReferenceToMedia(reference: MediaReference, appContext?: ApplicationContext, mediaOrigin = ''): PageMediaItem {
+    const previewUrl = toMediaUrl(reference.url, appContext, mediaOrigin);
     const fileName = previewUrl.split('?')[0].split('/').pop() || reference.id || 'Page media';
     const extension = fileName.includes('.') ? fileName.split('.').pop() || 'unknown' : 'unknown';
 
@@ -357,15 +383,15 @@ function mapReferenceToMedia(reference: MediaReference, appContext?: Application
 function hasMediaLocator(reference: MediaReference) {
     return Boolean(
         reference.url &&
-            (/^https?:\/\//i.test(reference.url) ||
-                reference.url.startsWith('/') ||
-                /\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(reference.url) ||
-                reference.url.includes('/-/media/')),
+        (/^https?:\/\//i.test(reference.url) ||
+            reference.url.startsWith('/') ||
+            /\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(reference.url) ||
+            reference.url.includes('/-/media/')),
     );
 }
 
-function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext): PageMediaItem[] {
-    const mediaOrigin = getMediaOrigin(references);
+function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext, fallbackMediaOrigin = ''): PageMediaItem[] {
+    const mediaOrigin = getMediaOrigin(references) || fallbackMediaOrigin;
     const itemsById = unwrapGraphqlData(payload) as Record<
         string,
         {
@@ -382,30 +408,35 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
         } | null
     >;
 
-    return references.map((reference, index) => {
-        const item = itemsById[`media${index}`];
-        if (!item && hasMediaLocator(reference)) {
-            return mapReferenceToMedia(reference, appContext);
-        }
+    return references
+        .map((reference, index) => {
+            const item = itemsById[`media${index}`];
+            if (!item && hasMediaLocator(reference)) {
+                return mapReferenceToMedia(reference, appContext, mediaOrigin);
+            }
 
-        if (!item) {
-            return undefined;
-        }
+            if (!item) {
+                return undefined;
+            }
 
-        const previewUrl = toMediaUrl(item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', item.extension?.value ?? '', mediaOrigin), appContext);
+            const previewUrl = toMediaUrl(
+                item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', item.extension?.value ?? '', mediaOrigin),
+                appContext,
+                mediaOrigin,
+            );
 
-        return {
-            id: item.itemId ?? item.id ?? reference.id,
-            name: item.name ?? reference.id ?? 'Page media',
-            previewUrl,
-            width: Number(item.width?.value) || reference.width,
-            height: Number(item.height?.value) || reference.height,
-            sizeKb: Math.round((Number(item.size?.value) || 0) / 1024),
-            format: item.extension?.value?.replace('.', '') || previewUrl.split('?')[0].split('.').pop() || 'unknown',
-            altText: reference.altText || item.alt?.value || '',
-            source: reference.source,
-        };
-    })
+            return {
+                id: item.itemId ?? item.id ?? reference.id,
+                name: item.name ?? reference.id ?? 'Page media',
+                previewUrl,
+                width: Number(item.width?.value) || reference.width,
+                height: Number(item.height?.value) || reference.height,
+                sizeKb: Math.round((Number(item.size?.value) || 0) / 1024),
+                format: item.extension?.value?.replace('.', '') || previewUrl.split('?')[0].split('.').pop() || 'unknown',
+                altText: reference.altText || item.alt?.value || '',
+                source: reference.source,
+            };
+        })
         .filter((item): item is PageMediaItem => Boolean(item?.previewUrl))
         .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
 }
@@ -598,20 +629,20 @@ async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: Da
     return [...directReferences, ...childReferences];
 }
 
-async function fetchPageMediaDetails(client: ClientSDK, references: MediaReference[], language?: string, appContext?: ApplicationContext) {
+async function fetchPageMediaDetails(client: ClientSDK, references: MediaReference[], language?: string, appContext?: ApplicationContext, mediaOrigin = '') {
     const mediaIds = references
         .map((reference, originalIndex) => ({ ...reference, originalIndex }))
         .filter((reference) => reference.id && !reference.id.startsWith('/') && !reference.id.startsWith('http'));
 
     if (mediaIds.length === 0) {
-        return references.filter(hasMediaLocator).map((reference) => mapReferenceToMedia(reference, appContext));
+        return references.filter(hasMediaLocator).map((reference) => mapReferenceToMedia(reference, appContext, mediaOrigin));
     }
 
     const query = `
     query PageMediaInspectorItems {
       ${mediaIds
           .map(
-            (reference) => `
+              (reference) => `
             media${reference.originalIndex}: item(where: { itemId: "{${reference.id}}" }) {
               itemId
               name
@@ -635,7 +666,7 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
         },
     });
 
-    return mapGraphqlMediaDetails(result, references, appContext);
+    return mapGraphqlMediaDetails(result, references, appContext, mediaOrigin);
 }
 
 function generateAltText(item: PageMediaItem) {
@@ -704,9 +735,27 @@ function Section({ children, count, title }: { children: ReactNode; count?: numb
     );
 }
 
-function ActionButton({ label, onClick, state }: { label: string; onClick: () => void; state: ActionState }) {
+function ActionButton({
+    disabled,
+    label,
+    onClick,
+    state,
+    title,
+}: {
+    disabled?: boolean;
+    label: string;
+    onClick: () => void;
+    state: ActionState;
+    title?: string;
+}) {
     return (
-        <button disabled={state === 'working'} onClick={onClick} style={styles.actionButton} type="button">
+        <button
+            disabled={disabled || state === 'working'}
+            onClick={onClick}
+            style={disabled ? styles.disabledActionButton : styles.actionButton}
+            title={title}
+            type="button"
+        >
             {state === 'working' ? '...' : state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : label}
         </button>
     );
@@ -716,6 +765,7 @@ function PagesContextPanel() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const [pagesContext, setPagesContext] = useState<PagesContext>();
     const [appContext, setAppContext] = useState<ApplicationContext>();
+    const [hostState, setHostState] = useState<HostStateContext>();
     const [pageMedia, setPageMedia] = useState<PageMediaItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
@@ -756,6 +806,16 @@ function PagesContextPanel() {
             } catch (pageError) {
                 console.error('Error retrieving pages.context:', pageError);
             }
+
+            try {
+                const hostResult = await client.query('host.state');
+                console.log('Success retrieving host.state:', hostResult.data);
+                if (isMounted) {
+                    setHostState(hostResult.data as HostStateContext);
+                }
+            } catch (hostError) {
+                console.error('Error retrieving host.state:', hostError);
+            }
         }
 
         loadContext();
@@ -777,10 +837,11 @@ function PagesContextPanel() {
             const pageMediaReferences = extractPageMediaReferences(pagesContext);
             const dataSourceReferences = extractDataSourceReferences(pagesContext);
             const sitecoreContextId = getSitecoreContextId(appContext);
+            const mediaOrigin = getHostMediaOrigin(hostState);
 
             if (!sitecoreContextId) {
                 console.error('No Sitecore context ID was found in application.context resourceAccess/resources.');
-                setPageMedia(pageMediaReferences.map((reference) => mapReferenceToMedia(reference, appContext)));
+                setPageMedia(pageMediaReferences.map((reference) => mapReferenceToMedia(reference, appContext, mediaOrigin)));
                 setActionStates({});
                 setIsLoading(false);
                 return;
@@ -789,11 +850,11 @@ function PagesContextPanel() {
             try {
                 const dataSourceMediaReferences = await fetchDataSourceMediaReferences(client, dataSourceReferences, pageInfo?.language, appContext);
                 const mediaReferences = [...pageMediaReferences, ...dataSourceMediaReferences];
-                const media = await fetchPageMediaDetails(client, mediaReferences, pageInfo?.language, appContext);
+                const media = await fetchPageMediaDetails(client, mediaReferences, pageInfo?.language, appContext, mediaOrigin);
                 setPageMedia(media);
             } catch (mediaError) {
                 console.error('Error retrieving page media details:', mediaError);
-                setPageMedia(pageMediaReferences.map((reference) => mapReferenceToMedia(reference, appContext)));
+                setPageMedia(pageMediaReferences.map((reference) => mapReferenceToMedia(reference, appContext, mediaOrigin)));
             } finally {
                 setActionStates({});
                 setIsLoading(false);
@@ -801,7 +862,7 @@ function PagesContextPanel() {
         }
 
         refreshPageMedia();
-    }, [appContext, client, pagesContext]);
+    }, [appContext, client, hostState, pagesContext]);
 
     useEffect(() => {
         if (error) {
@@ -838,14 +899,13 @@ function PagesContextPanel() {
             return;
         }
 
-        setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
-        setActionMessage('');
-
         if (action !== 'alt') {
-            setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
-            setActionMessage('Optimize, WebP, and ratio changes need a media upload/replacement API. No Sitecore item was changed.');
+            setActionMessage('Optimize, WebP, and ratio changes require a media upload/replacement API. ALT updates are persisted through Authoring GraphQL.');
             return;
         }
+
+        setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
+        setActionMessage('');
 
         try {
             const altText = generateAltText(item);
@@ -922,18 +982,24 @@ function PagesContextPanel() {
 
                                     <div style={styles.actions}>
                                         <ActionButton
+                                            disabled
                                             label="Optimize"
                                             state={actionStates[`${item.id}-optimize`] ?? 'idle'}
+                                            title="Requires media upload/replacement API"
                                             onClick={() => runAction(item.id, 'optimize')}
                                         />
                                         <ActionButton
+                                            disabled
                                             label="WebP"
                                             state={actionStates[`${item.id}-webp`] ?? 'idle'}
+                                            title="Requires media upload/replacement API"
                                             onClick={() => runAction(item.id, 'webp')}
                                         />
                                         <ActionButton
+                                            disabled
                                             label="Ratio"
                                             state={actionStates[`${item.id}-aspect`] ?? 'idle'}
+                                            title="Requires media upload/replacement API"
                                             onClick={() => runAction(item.id, 'aspect')}
                                         />
                                         <ActionButton label="ALT" state={actionStates[`${item.id}-alt`] ?? 'idle'} onClick={() => runAction(item.id, 'alt')} />
@@ -1169,6 +1235,16 @@ const styles: Record<string, CSSProperties> = {
         borderRadius: '6px',
         color: '#ffffff',
         cursor: 'pointer',
+        fontSize: '11px',
+        minHeight: '30px',
+        padding: '6px',
+    },
+    disabledActionButton: {
+        background: '#e2e8f0',
+        border: '1px solid #cbd5e1',
+        borderRadius: '6px',
+        color: '#64748b',
+        cursor: 'not-allowed',
         fontSize: '11px',
         minHeight: '30px',
         padding: '6px',
