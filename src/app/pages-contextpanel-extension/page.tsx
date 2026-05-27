@@ -103,6 +103,25 @@ function toMediaUrl(url: string, appContext?: ApplicationContext) {
     return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${url}` : url;
 }
 
+function mediaPathToUrl(path: string, extension: string) {
+    const mediaLibraryMarker = '/sitecore/media library/';
+    const markerIndex = path.toLowerCase().indexOf(mediaLibraryMarker);
+
+    if (markerIndex === -1) {
+        return '';
+    }
+
+    const relativePath = path
+        .slice(markerIndex + mediaLibraryMarker.length)
+        .split('/')
+        .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
+        .join('/');
+    const normalizedExtension = extension.replace('.', '').toLowerCase();
+    const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
+
+    return `/-/media/${relativePath}${extensionSuffix}`;
+}
+
 function getFieldValue(record: Record<string, unknown>) {
     return safeText(record.value) || safeText(record.rawValue) || safeText(record.fieldValue) || safeText(record.displayValue) || safeText(record.text);
 }
@@ -348,7 +367,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
             return undefined;
         }
 
-        const previewUrl = toMediaUrl(item.url || reference.url, appContext);
+        const previewUrl = toMediaUrl(item.url || reference.url || mediaPathToUrl(item.path ?? '', item.extension?.value ?? ''), appContext);
 
         return {
             id: item.itemId ?? item.id ?? reference.id,
@@ -361,7 +380,9 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
             altText: reference.altText || item.alt?.value || '',
             source: reference.source,
         };
-    }).filter((item): item is PageMediaItem => Boolean(item?.previewUrl));
+    })
+        .filter((item): item is PageMediaItem => Boolean(item?.previewUrl))
+        .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
 }
 
 function unwrapGraphqlData(payload: unknown) {
