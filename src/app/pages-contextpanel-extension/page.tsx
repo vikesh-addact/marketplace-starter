@@ -321,6 +321,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
         string,
         {
             id?: string;
+            itemId?: string;
             name?: string;
             path?: string;
             url?: string;
@@ -345,7 +346,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
         const previewUrl = toMediaUrl(item.url || reference.url, appContext);
 
         return {
-            id: item.id ?? reference.id,
+            id: item.itemId ?? item.id ?? reference.id,
             name: item.name ?? reference.id ?? 'Page media',
             previewUrl,
             width: Number(item.width?.value) || reference.width,
@@ -479,15 +480,17 @@ async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: Da
     query PageDataSourceMediaItems {
       ${dataSources
           .map(
-              (dataSource, index) => `
-            dataSource${index}: item(path: "{${dataSource.id}}", language: "${language ?? 'en'}") {
-              id
+            (dataSource, index) => `
+            dataSource${index}: item(where: { itemId: "{${dataSource.id}}" }) {
+              itemId
               name
               path
-              fields {
-                name
-                value
-                jsonValue
+              fields(ownFields: true, excludeStandardFields: true) {
+                nodes {
+                  name
+                  value
+                  jsonValue
+                }
               }
             }
           `,
@@ -521,12 +524,11 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
     query PageMediaInspectorItems {
       ${mediaIds
           .map(
-              (reference) => `
-            media${reference.originalIndex}: item(path: "{${reference.id}}", language: "${language ?? 'en'}") {
-              id
+            (reference) => `
+            media${reference.originalIndex}: item(where: { itemId: "{${reference.id}}" }) {
+              itemId
               name
               path
-              url
               width: field(name: "Width") { value }
               height: field(name: "Height") { value }
               size: field(name: "Size") { value }
