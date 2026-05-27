@@ -7,7 +7,7 @@ import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect';
-type ActionState = 'idle' | 'working' | 'done';
+type ActionState = 'idle' | 'working' | 'done' | 'failed';
 
 interface PageMediaItem {
     id: string;
@@ -103,7 +103,7 @@ function toMediaUrl(url: string, appContext?: ApplicationContext) {
     return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${url}` : url;
 }
 
-function mediaPathToUrl(path: string, extension: string) {
+function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
     const mediaLibraryMarker = '/sitecore/media library/';
     const markerIndex = path.toLowerCase().indexOf(mediaLibraryMarker);
 
@@ -119,7 +119,21 @@ function mediaPathToUrl(path: string, extension: string) {
     const normalizedExtension = extension.replace('.', '').toLowerCase();
     const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
 
-    return `/-/media/${relativePath}${extensionSuffix}`;
+    return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
+}
+
+function getMediaOrigin(references: MediaReference[]) {
+    const absoluteMediaUrl = references.find((reference) => /^https?:\/\//i.test(reference.url))?.url;
+
+    if (!absoluteMediaUrl) {
+        return '';
+    }
+
+    try {
+        return new URL(absoluteMediaUrl).origin;
+    } catch {
+        return '';
+    }
 }
 
 function getFieldValue(record: Record<string, unknown>) {
@@ -141,6 +155,16 @@ function getCurrentPageInfo(context?: PagesContext) {
 
 function normalizeItemId(value: string) {
     return value.replace(/[{}]/g, '').toUpperCase();
+}
+
+function formatItemIdForGraphql(value: string) {
+    const cleanId = value.replace(/[{}-]/g, '');
+
+    if (/^[0-9a-fA-F]{32}$/.test(cleanId)) {
+        return `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`;
+    }
+
+    return value.startsWith('{') ? value : `{${value}}`;
 }
 
 function extractItemIdsFromValue(value: string) {
@@ -341,6 +365,7 @@ function hasMediaLocator(reference: MediaReference) {
 }
 
 function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext): PageMediaItem[] {
+    const mediaOrigin = getMediaOrigin(references);
     const itemsById = unwrapGraphqlData(payload) as Record<
         string,
         {
@@ -367,7 +392,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
             return undefined;
         }
 
-        const previewUrl = toMediaUrl(item.url || reference.url || mediaPathToUrl(item.path ?? '', item.extension?.value ?? ''), appContext);
+        const previewUrl = toMediaUrl(item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', item.extension?.value ?? '', mediaOrigin), appContext);
 
         return {
             id: item.itemId ?? item.id ?? reference.id,
@@ -613,22 +638,47 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
     return mapGraphqlMediaDetails(result, references, appContext);
 }
 
-async function mockApplyAction(item: PageMediaItem, action: MediaAction): Promise<PageMediaItem> {
-    await new Promise((resolve) => setTimeout(resolve, 380));
+function generateAltText(item: PageMediaItem) {
+    return item.altText || item.name.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
-    if (action === 'optimize') {
-        return { ...item, sizeKb: Math.max(70, Math.round(item.sizeKb * 0.6)) };
+async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext, item: PageMediaItem, altText: string) {
+    const mutation = `
+      mutation UpdateMediaAlt($itemId: ID!, $altText: String!) {
+        updateItem(
+          input: {
+            database: "master"
+            itemId: $itemId
+            fields: [{ name: "Alt", value: $altText, reset: false }]
+          }
+        ) {
+          item {
+            itemId
+            field(name: "Alt") {
+              value
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await client.mutate('xmc.authoring.graphql', {
+        params: {
+            query: getGraphqlQueryParams(appContext),
+            body: {
+                query: mutation,
+                variables: {
+                    itemId: formatItemIdForGraphql(item.id),
+                    altText,
+                },
+            },
+        },
+    });
+    const graphQlResult = result as { data?: { errors?: Array<{ message?: string }> } };
+
+    if (graphQlResult.data?.errors?.length) {
+        throw new Error(graphQlResult.data.errors.map((mutationError) => mutationError.message).join(', '));
     }
-
-    if (action === 'webp') {
-        return { ...item, format: 'webp', sizeKb: Math.max(60, Math.round(item.sizeKb * 0.54)) };
-    }
-
-    if (action === 'alt') {
-        return { ...item, altText: item.altText || `Descriptive image for ${item.name}` };
-    }
-
-    return { ...item, width: 1200, height: 675 };
 }
 
 function ScoreIndicator({ score }: { score: number }) {
@@ -657,7 +707,7 @@ function Section({ children, count, title }: { children: ReactNode; count?: numb
 function ActionButton({ label, onClick, state }: { label: string; onClick: () => void; state: ActionState }) {
     return (
         <button disabled={state === 'working'} onClick={onClick} style={styles.actionButton} type="button">
-            {state === 'working' ? '...' : state === 'done' ? 'Done' : label}
+            {state === 'working' ? '...' : state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : label}
         </button>
     );
 }
@@ -669,6 +719,7 @@ function PagesContextPanel() {
     const [pageMedia, setPageMedia] = useState<PageMediaItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+    const [actionMessage, setActionMessage] = useState('');
 
     useEffect(() => {
         let unsubscribe: (() => void) | undefined;
@@ -783,14 +834,30 @@ function PagesContextPanel() {
     async function runAction(itemId: string, action: MediaAction) {
         const actionKey = `${itemId}-${action}`;
         const item = pageMedia.find((mediaItem) => mediaItem.id === itemId);
-        if (!item) {
+        if (!item || !client || !appContext) {
             return;
         }
 
         setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
-        const updatedItem = await mockApplyAction(item, action);
-        setPageMedia((current) => current.map((mediaItem) => (mediaItem.id === itemId ? updatedItem : mediaItem)));
-        setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+        setActionMessage('');
+
+        if (action !== 'alt') {
+            setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
+            setActionMessage('Optimize, WebP, and ratio changes need a media upload/replacement API. No Sitecore item was changed.');
+            return;
+        }
+
+        try {
+            const altText = generateAltText(item);
+            await updateMediaAlt(client, appContext, item, altText);
+            setPageMedia((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
+            setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+            setActionMessage(`Updated ALT text for ${item.name} in Sitecore.`);
+        } catch (actionError) {
+            console.error('Error updating media ALT text:', actionError);
+            setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
+            setActionMessage(`ALT update failed: ${actionError instanceof Error ? actionError.message : String(actionError)}`);
+        }
     }
 
     return (
@@ -819,6 +886,8 @@ function PagesContextPanel() {
                         </div>
                         <ScoreIndicator score={pageScore} />
                     </section>
+
+                    {actionMessage && <div style={styles.noticeBox}>{actionMessage}</div>}
 
                     <Section count={analyzedMedia.length} title="Media on this page">
                         <div style={styles.mediaList}>
@@ -1128,6 +1197,15 @@ const styles: Record<string, CSSProperties> = {
         color: '#64748b',
         padding: '24px',
         textAlign: 'center',
+    },
+    noticeBox: {
+        background: '#eff6ff',
+        border: '1px solid #bfdbfe',
+        borderRadius: '8px',
+        color: '#1d4ed8',
+        fontSize: '12px',
+        marginBottom: '10px',
+        padding: '10px',
     },
     error: {
         color: '#b91c1c',
