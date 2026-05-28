@@ -20,7 +20,11 @@ interface MediaItem {
     altText: string;
     path?: string;
 }
-
+interface HostStateContext {
+    xmCloudTenantInfo?: {
+        url?: string;
+    };
+}
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
@@ -189,7 +193,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             };
         };
     };
-    const mediaOrigin = getHostMediaOrigin(appContext);
+
     type XmCloudAppContext = ApplicationContext & {
         xmCloudTenantInfo?: {
             url?: string;
@@ -200,10 +204,9 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             };
         };
     };
-    function getHostMediaOrigin(appContext?: ApplicationContext): string {
-        const context = appContext as XmCloudAppContext;
 
-        const hostUrl = context.xmCloudTenantInfo?.url || context.host?.xmCloudTenantInfo?.url;
+    function getHostMediaOrigin(hostState?: HostStateContext) {
+        const hostUrl = hostState?.xmCloudTenantInfo?.url;
 
         if (!hostUrl) {
             return '';
@@ -221,24 +224,24 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             return '';
         }
 
-        // absolute URL
         if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
             return url.replace('/-/media/', '/-/jssmedia/');
         }
 
-        // convert Sitecore shell media path
         let normalizedUrl = url.replace(/\/en\/sitecore\/shell\/sitecore\/media-library/i, '/-/jssmedia');
 
-        // convert standard media endpoint
         normalizedUrl = normalizedUrl.replace('/-/media/', '/-/jssmedia/');
 
-        // build final URL
         if (normalizedUrl.startsWith('/')) {
             return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
         }
 
         return mediaOrigin ? `${mediaOrigin}/${normalizedUrl}` : normalizedUrl;
     }
+
+    const xmCloudContext = appContext as XmCloudAppContext | undefined;
+
+    const mediaOrigin = getHostMediaOrigin(xmCloudContext?.host) || getHostMediaOrigin(xmCloudContext) || '';
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
