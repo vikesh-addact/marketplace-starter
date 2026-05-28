@@ -670,7 +670,14 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
 }
 
 function generateAltText(item: PageMediaItem) {
-    return item.altText || item.name.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return (
+        item.altText ||
+        `${item.name
+            .replace(/\.[^/.]+$/, '')
+            .replace(/[_-]+/g, ' ')
+            .replace(/\bwebp\b/gi, '')
+            .trim()} illustration`
+    );
 }
 
 async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext, item: PageMediaItem, altText: string) {

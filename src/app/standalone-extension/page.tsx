@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import type { ApplicationContext } from "@sitecore-marketplace-sdk/client";
+import type { ApplicationContext, ClientSDK } from "@sitecore-marketplace-sdk/client";
 import { useMarketplaceClient } from "@/src/utils/hooks/useMarketplaceClient";
 
 type MediaIssue = "missingAlt" | "largeImage" | "badAspectRatio" | "unsupportedFormat";
 type MediaAction = "optimize" | "webp" | "alt" | "aspect";
-type ActionState = "idle" | "working" | "done";
+type ActionState = "idle" | "working" | "done" | "failed";
 
 interface MediaItem {
   id: string;
@@ -31,6 +31,67 @@ function getSitecoreContextId(appContext?: ApplicationContext) {
 function getGraphqlQueryParams(appContext?: ApplicationContext) {
   const sitecoreContextId = getSitecoreContextId(appContext);
   return sitecoreContextId ? { sitecoreContextId } : undefined;
+}
+
+function formatItemIdForGraphql(value: string) {
+  const cleanId = value.replace(/[{}-]/g, "");
+
+  if (/^[0-9a-fA-F]{32}$/.test(cleanId)) {
+    return `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`;
+  }
+
+  return value.startsWith("{") ? value : `{${value}}`;
+}
+
+function generateAltText(item: MediaItem) {
+  return (
+    item.altText ||
+    `${item.name
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\bwebp\b/gi, "")
+      .trim()} illustration`
+  );
+}
+
+async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext, item: MediaItem, altText: string) {
+  const mutation = `
+    mutation UpdateMediaAlt($itemId: ID!, $altText: String!) {
+      updateItem(
+        input: {
+          database: "master"
+          itemId: $itemId
+          fields: [{ name: "Alt", value: $altText, reset: false }]
+        }
+      ) {
+        item {
+          itemId
+          field(name: "Alt") {
+            value
+          }
+        }
+      }
+    }
+  `;
+
+  const result = await client.mutate("xmc.authoring.graphql", {
+    params: {
+      query: getGraphqlQueryParams(appContext),
+      body: {
+        query: mutation,
+        variables: {
+          itemId: formatItemIdForGraphql(item.id),
+          altText,
+        },
+      },
+    },
+  });
+
+  const graphQlResult = result as { data?: { errors?: Array<{ message?: string }> } };
+
+  if (graphQlResult.data?.errors?.length) {
+    throw new Error(graphQlResult.data.errors.map((mutationError) => mutationError.message).join(", "));
+  }
 }
 
 function getMediaIssues(item: MediaItem): MediaIssue[] {
@@ -183,7 +244,7 @@ function ActionButton({
 }) {
   return (
     <button disabled={state === "working"} onClick={onClick} style={styles.actionButton} type="button">
-      {state === "working" ? "Working..." : state === "done" ? "Done" : label}
+      {state === "working" ? "Working..." : state === "done" ? "Done" : state === "failed" ? "Failed" : label}
     </button>
   );
 }
@@ -222,6 +283,42 @@ function StandaloneExtension() {
         console.error("Error retrieving application.context:", contextError);
       }
 
+      let projectId = "{3D6658D8-A0BF-4E75-B3E2-D050FABCF4E1}";
+
+      try {
+        const pathResult = await client.mutate("xmc.authoring.graphql", {
+          params: {
+            query: getGraphqlQueryParams(loadedAppContext),
+            body: {
+              query: `
+                query GetProjectFolder {
+                  item(path: "/sitecore/media library/Project") {
+                    id
+                  }
+                }
+              `,
+            },
+          },
+        });
+        const pathData = pathResult as {
+          data?: {
+            item?: { id: string };
+            data?: {
+              item?: { id: string };
+            };
+          };
+        };
+        const unwrapped = pathData.data?.data?.item ?? pathData.data?.item;
+        if (unwrapped?.id) {
+          projectId = unwrapped.id;
+          console.log("Successfully resolved /sitecore/media library/Project to ID:", projectId);
+        } else {
+          console.warn("Could not find ID for path /sitecore/media library/Project, using default fallback.");
+        }
+      } catch (pathError) {
+        console.error("Error retrieving ID for /sitecore/media library/Project:", pathError);
+      }
+
       try {
         setIsLoadingMedia(true);
         const mediaResult = await client.mutate("xmc.authoring.graphql", {
@@ -232,7 +329,7 @@ function StandaloneExtension() {
                 query MediaOptimizerItems {
                   search(first: 50, where: {
                     AND: [
-                      { name: "_path", value: "{3D6658D8-A0BF-4E75-B3E2-D050FABCF4E1}" }
+                      { name: "_path", value: "${projectId}" }
                     ]
                   }) {
                     results {
@@ -315,14 +412,34 @@ function StandaloneExtension() {
     setActionStates((current) => ({ ...current, [actionKey]: "working" }));
 
     const item = mediaItems.find((mediaItem) => mediaItem.id === itemId);
-    if (!item) {
+    if (!item || !client || !appContext) {
       setActionStates((current) => ({ ...current, [actionKey]: "idle" }));
       return;
     }
 
-    const updatedItem = await mockOptimizeMedia(item, action);
-    setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? updatedItem : mediaItem)));
-    setActionStates((current) => ({ ...current, [actionKey]: "done" }));
+    if (action === "alt") {
+      try {
+        const altText = generateAltText(item);
+        await updateMediaAlt(client, appContext, item, altText);
+        setMediaItems((current) =>
+          current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem))
+        );
+        setActionStates((current) => ({ ...current, [actionKey]: "done" }));
+      } catch (actionError) {
+        console.error("Error updating media ALT text:", actionError);
+        setActionStates((current) => ({ ...current, [actionKey]: "failed" }));
+      }
+      return;
+    }
+
+    try {
+      const updatedItem = await mockOptimizeMedia(item, action);
+      setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? updatedItem : mediaItem)));
+      setActionStates((current) => ({ ...current, [actionKey]: "done" }));
+    } catch (actionError) {
+      console.error(`Error performing action ${action}:`, actionError);
+      setActionStates((current) => ({ ...current, [actionKey]: "failed" }));
+    }
   }
 
   return (
