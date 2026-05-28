@@ -318,20 +318,6 @@ function StandaloneExtension() {
                                     criteriaType: EXACT
                                     operator: MUST
                                 }
-
-                                {
-                                    field: "_path"
-                                    value: "8f967e299bf0491e92797261432dbd25"
-                                    criteriaType: EXACT
-                                    operator: MUST_NOT
-                                }
-
-                                {
-                                    field: "_path"
-                                    value: "9f9ddea52e55477e95a22c1ece36d43d"
-                                    criteriaType: EXACT
-                                    operator: MUST_NOT
-                                }
                                 {
                                     field: "_templatename"
                                     value: "Image"
