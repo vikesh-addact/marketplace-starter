@@ -197,14 +197,18 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
 
         // already absolute
         if (/^https?:\/\//i.test(url)) {
-            return url.replace('/-/media/', '/-/jssmedia/');
+            return url;
         }
 
-        // convert media path
-        const mediaPath = url.replace('/-/media/', '/-/jssmedia/');
+        let mediaPath = url;
 
-        // Sitecore host
-        const sitecoreHost = appContext?.resourceAccess?.[0]?.hostname || appContext?.resources?.[0]?.hostname || appContext?.url || '';
+        // convert Sitecore shell media-library path
+        mediaPath = mediaPath.replace(/\/en\/sitecore\/shell\/sitecore\/media-library/i, '/-/jssmedia');
+
+        // convert normal media path
+        mediaPath = mediaPath.replace('/-/media/', '/-/jssmedia/');
+
+        const sitecoreHost = appContext?.resourceAccess?.[0]?.hostname || appContext?.resources?.[0]?.hostname || '';
 
         if (!sitecoreHost) {
             return mediaPath;
@@ -212,7 +216,6 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
 
         const normalizedHost = sitecoreHost.replace(/\/$/, '');
 
-        // ensure full absolute URL
         return mediaPath.startsWith('/') ? `${normalizedHost}${mediaPath}` : `${normalizedHost}/${mediaPath}`;
     }
 
