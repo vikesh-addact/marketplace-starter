@@ -191,7 +191,15 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
             };
         };
     };
+    function buildMediaUrl(url?: string) {
+        if (!url) return '';
 
+        if (url.startsWith('http')) {
+            return url;
+        }
+
+        return `https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io${url}`;
+    }
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
     return results
@@ -201,7 +209,7 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
             return {
                 id: result.itemId ?? `media-${index}`,
                 name: result.name ?? `Media ${index + 1}`,
-                thumbnailUrl: inner?.url ?? '',
+                thumbnailUrl: buildMediaUrl(inner?.url),
                 width: Number(inner?.width?.value) || 0,
                 height: Number(inner?.height?.value) || 0,
                 sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
@@ -247,9 +255,9 @@ function ScoreBadge({ score }: { score: number }) {
     return <span style={{ ...styles.scoreBadge, ...tone }}>{score}</span>;
 }
 
-function ActionButton({ label, state, onClick }: { label: string; state: ActionState; onClick: () => void }) {
+function ActionButton({ label, state, onClick, disabled = false }: { label: string; state: ActionState; onClick: () => void; disabled?: boolean }) {
     return (
-        <button disabled={state === 'working'} onClick={onClick} style={styles.actionButton} type="button">
+        <button disabled={disabled || state === 'working'} onClick={onClick} style={styles.actionButton} type="button">
             {state === 'working' ? 'Working...' : state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : label}
         </button>
     );
@@ -310,6 +318,20 @@ function StandaloneExtension() {
                                     criteriaType: EXACT
                                     operator: MUST
                                 }
+
+                                {
+                                    field: "_path"
+                                    value: "8f967e299bf0491e92797261432dbd25"
+                                    criteriaType: EXACT
+                                    operator: MUST_NOT
+                                }
+
+                                {
+                                    field: "_path"
+                                    value: "9f9ddea52e55477e95a22c1ece36d43d"
+                                    criteriaType: EXACT
+                                    operator: MUST_NOT
+                                }
                                 {
                                     field: "_templatename"
                                     value: "Image"
@@ -330,12 +352,6 @@ function StandaloneExtension() {
                                 }
                                 {
                                     field: "_templatename"
-                                    value: "Gif"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
                                     value: "WebP"
                                     criteriaType: EXACT
                                     operator: SHOULD
@@ -343,12 +359,6 @@ function StandaloneExtension() {
                                 {
                                     field: "_templatename"
                                     value: "Svg"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Avif"
                                     criteriaType: EXACT
                                     operator: SHOULD
                                 }
@@ -581,22 +591,25 @@ function StandaloneExtension() {
                                             <td style={styles.td}>
                                                 <div style={styles.actions}>
                                                     <ActionButton
-                                                        label="Optimize"
-                                                        state={actionStates[`${item.id}-optimize`] ?? 'idle'}
-                                                        onClick={() => runAction(item.id, 'optimize')}
-                                                    />
-                                                    <ActionButton
-                                                        label="WebP"
-                                                        state={actionStates[`${item.id}-webp`] ?? 'idle'}
-                                                        onClick={() => runAction(item.id, 'webp')}
-                                                    />
-                                                    <ActionButton
                                                         label="ALT"
                                                         state={actionStates[`${item.id}-alt`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'alt')}
                                                     />
                                                     <ActionButton
+                                                        label="Optimize"
+                                                        disabled
+                                                        state={actionStates[`${item.id}-optimize`] ?? 'idle'}
+                                                        onClick={() => runAction(item.id, 'optimize')}
+                                                    />
+                                                    <ActionButton
+                                                        label="WebP"
+                                                        disabled
+                                                        state={actionStates[`${item.id}-webp`] ?? 'idle'}
+                                                        onClick={() => runAction(item.id, 'webp')}
+                                                    />
+                                                    <ActionButton
                                                         label="Ratio"
+                                                        disabled
                                                         state={actionStates[`${item.id}-aspect`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'aspect')}
                                                     />
@@ -708,12 +721,12 @@ const styles: Record<string, CSSProperties> = {
         background: '#ffffff',
         border: '1px solid #e2e8f0',
         borderRadius: '8px',
-        overflowX: 'auto',
+        overflowX: 'hidden',
     },
     table: {
         borderCollapse: 'collapse',
-        minWidth: '1040px',
         width: '100%',
+        tableLayout: 'fixed',
     },
     th: {
         borderBottom: '1px solid #e2e8f0',
@@ -730,19 +743,19 @@ const styles: Record<string, CSSProperties> = {
         fontSize: '14px',
         padding: '14px',
         verticalAlign: 'middle',
+        wordBreak: 'break-word',
     },
     mediaCell: {
         alignItems: 'center',
         display: 'flex',
         gap: '12px',
-        minWidth: '260px',
     },
     thumbnail: {
         aspectRatio: '4 / 3',
         borderRadius: '6px',
-        height: '66px',
         objectFit: 'cover',
-        width: '88px',
+        height: '52px',
+        width: '72px',
     },
     path: {
         color: '#64748b',
@@ -784,9 +797,8 @@ const styles: Record<string, CSSProperties> = {
     },
     actions: {
         display: 'flex',
-        flexWrap: 'wrap',
-        gap: '7px',
-        minWidth: '230px',
+        flexDirection: 'column',
+        gap: '6px',
     },
     actionButton: {
         background: '#0f172a',
