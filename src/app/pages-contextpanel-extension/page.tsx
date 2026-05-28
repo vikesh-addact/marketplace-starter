@@ -97,35 +97,41 @@ function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = 
         return '';
     }
 
-    if (url.startsWith('data:')) {
+    if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
         return url;
-    }
-
-    if (/^https?:\/\//i.test(url)) {
-        return url.replace('/-/media/', '/-/jssmedia/');
     }
 
     const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
 
-    if (normalizedUrl.startsWith('/')) {
-        if (mediaOrigin) {
-            return `${mediaOrigin}${normalizedUrl}`;
-        }
-
-        if (typeof window !== 'undefined') {
-            return `${window.location.origin}${normalizedUrl}`;
-        }
-
-        return normalizedUrl;
+    if (url.startsWith('/')) {
+        return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
     }
 
     const baseUrl = appContext?.url?.replace(/\/$/, '');
+    return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
+}
 
-    if (baseUrl && /^https?:\/\//i.test(baseUrl)) {
-        return `${baseUrl}/${normalizedUrl}`;
+function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
+    const mediaLibraryMarker = '/sitecore/media library/';
+    const markerIndex = path.toLowerCase().indexOf(mediaLibraryMarker);
+
+    if (markerIndex === -1) {
+        return '';
     }
 
-    return normalizedUrl;
+    const relativePath = path
+        .slice(markerIndex + mediaLibraryMarker.length)
+        .split('/')
+        .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
+        .join('/');
+    const normalizedExtension = extension.replace('.', '').toLowerCase();
+    const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
+
+    if (!origin) {
+        return '';
+    }
+
+    return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
 }
 
 function getMediaOrigin(references: MediaReference[]) {
@@ -413,7 +419,11 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
                 return undefined;
             }
 
-            const previewUrl = toMediaUrl(item.url || reference.url, appContext, mediaOrigin);
+            const previewUrl = toMediaUrl(
+                item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', item.extension?.value ?? '', mediaOrigin),
+                appContext,
+                mediaOrigin,
+            );
 
             return {
                 id: item.itemId ?? item.id ?? reference.id,
@@ -952,26 +962,14 @@ function PagesContextPanel() {
                                 <article key={item.id} style={styles.mediaCard}>
                                     <div style={styles.mediaTop}>
                                         <img alt={item.altText || item.name} src={item.previewUrl} style={styles.preview} />
-
                                         <div style={styles.mediaInfo}>
-                                            <div style={styles.mediaName}>{item.name}</div>
-
-                                            <div style={styles.mediaPath}>{item.source}</div>
-
-                                            <div style={styles.meta}>{item.previewUrl}</div>
-                                        </div>
-
-                                        <div style={styles.detailsColumn}>
-                                            <ScoreIndicator score={item.score} />
-
-                                            <span style={styles.detailBadge}>
-                                                {item.width || '?'} × {item.height || '?'}
+                                            <strong>{item.name}</strong>
+                                            <span style={styles.meta}>{item.source}</span>
+                                            <span style={styles.meta}>
+                                                {item.width || '?'} x {item.height || '?'} / {formatSize(item.sizeKb)} / {item.format.toUpperCase()}
                                             </span>
-
-                                            <span style={styles.detailBadge}>{formatSize(item.sizeKb)}</span>
-
-                                            <span style={styles.detailBadge}>{item.format.toUpperCase()}</span>
                                         </div>
+                                        <ScoreIndicator score={item.score} />
                                     </div>
 
                                     <div style={styles.altRow}>
@@ -1158,73 +1156,33 @@ const styles: Record<string, CSSProperties> = {
         gap: '10px',
     },
     mediaCard: {
-        background: '#ffffff',
         border: '1px solid #e2e8f0',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        padding: '14px',
+        borderRadius: '8px',
+        padding: '10px',
     },
-
     mediaTop: {
         alignItems: 'flex-start',
-        columnGap: '14px',
         display: 'grid',
-        gridTemplateColumns: '84px minmax(0, 1fr) 120px',
+        gap: '9px',
+        gridTemplateColumns: '64px minmax(0, 1fr) auto',
     },
     preview: {
-        background: '#f1f5f9',
-        border: '1px solid #e2e8f0',
-        borderRadius: '10px',
-        height: '84px',
+        aspectRatio: '1 / 1',
+        borderRadius: '6px',
+        height: '64px',
         objectFit: 'cover',
-        width: '84px',
+        width: '64px',
     },
     mediaInfo: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px',
+        display: 'grid',
+        gap: '3px',
         minWidth: 0,
     },
     meta: {
         color: '#64748b',
         fontSize: '12px',
-        lineHeight: 1.45,
-        overflowWrap: 'anywhere',
-        whiteSpace: 'normal',
-    },
-    mediaName: {
-        color: '#0f172a',
-        fontSize: '14px',
-        fontWeight: 700,
-        lineHeight: 1.3,
-        overflowWrap: 'anywhere',
-    },
-
-    mediaPath: {
-        color: '#475569',
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        lineHeight: 1.5,
-        overflowWrap: 'anywhere',
-        wordBreak: 'break-word',
-    },
-
-    detailsColumn: {
-        alignItems: 'flex-end',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px',
-        minWidth: '110px',
-    },
-
-    detailBadge: {
-        background: '#f8fafc',
-        border: '1px solid #e2e8f0',
-        borderRadius: '999px',
-        color: '#334155',
-        fontSize: '11px',
-        fontWeight: 600,
-        padding: '5px 9px',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
     },
     altRow: {

@@ -150,11 +150,10 @@ function formatSize(sizeKb: number) {
     return sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
 }
 
-function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
+function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext): MediaItem[] {
     const data = payload as {
         data?: {
             search?: {
-                total?: number;
                 results?: Array<{
                     itemId?: string;
                     name?: string;
@@ -172,7 +171,6 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
             };
             data?: {
                 search?: {
-                    total?: number;
                     results?: Array<{
                         itemId?: string;
                         name?: string;
@@ -191,25 +189,54 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
             };
         };
     };
-    function buildMediaUrl(url?: string) {
-        if (!url) return '';
 
-        if (url.startsWith('http')) {
+    function toMediaUrl(url?: string, mediaOrigin = ''): string {
+        if (!url) {
+            return '';
+        }
+
+        if (url.startsWith('data:')) {
             return url;
         }
 
-        return `https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io${url}`;
+        if (/^https?:\/\//i.test(url)) {
+            return url.replace('/-/media/', '/-/jssmedia/');
+        }
+
+        const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
+
+        if (normalizedUrl.startsWith('/')) {
+            if (mediaOrigin) {
+                return `${mediaOrigin}${normalizedUrl}`;
+            }
+
+            if (typeof window !== 'undefined') {
+                return `${window.location.origin}${normalizedUrl}`;
+            }
+
+            return normalizedUrl;
+        }
+
+        const baseUrl = appContext?.url?.replace(/\/$/, '');
+
+        if (baseUrl && /^https?:\/\//i.test(baseUrl)) {
+            return `${baseUrl}/${normalizedUrl}`;
+        }
+
+        return normalizedUrl;
     }
+
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
     return results
         .map((result, index) => {
             const inner = result.innerItem;
             const ext = inner?.extension?.value?.replace('.', '').toLowerCase() ?? 'unknown';
+
             return {
                 id: result.itemId ?? `media-${index}`,
                 name: result.name ?? `Media ${index + 1}`,
-                thumbnailUrl: buildMediaUrl(inner?.url),
+                thumbnailUrl: toMediaUrl(inner?.url),
                 width: Number(inner?.width?.value) || 0,
                 height: Number(inner?.height?.value) || 0,
                 sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
@@ -390,7 +417,7 @@ function StandaloneExtension() {
                 });
 
                 console.log('Media search result:', JSON.stringify(mediaResult, null, 2));
-                const items = mapGraphqlMediaItems(mediaResult).filter((item) => item.thumbnailUrl || item.name);
+                const items = mapGraphqlMediaItems(mediaResult, loadedAppContext).filter((item) => item.thumbnailUrl || item.name);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
             } catch (mediaError) {
@@ -706,13 +733,14 @@ const styles: Record<string, CSSProperties> = {
     tableWrap: {
         background: '#ffffff',
         border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        overflowX: 'hidden',
+        borderRadius: '12px',
+        overflowX: 'auto',
     },
+
     table: {
         borderCollapse: 'collapse',
         width: '100%',
-        tableLayout: 'fixed',
+        minWidth: '1200px',
     },
     th: {
         borderBottom: '1px solid #e2e8f0',
@@ -727,28 +755,30 @@ const styles: Record<string, CSSProperties> = {
     },
     td: {
         fontSize: '14px',
-        padding: '14px',
+        padding: '16px',
         verticalAlign: 'middle',
-        wordBreak: 'break-word',
     },
     mediaCell: {
         alignItems: 'center',
         display: 'flex',
-        gap: '12px',
+        gap: '14px',
+        minWidth: '260px',
     },
     thumbnail: {
-        aspectRatio: '4 / 3',
-        borderRadius: '6px',
-        objectFit: 'cover',
-        height: '52px',
         width: '72px',
+        height: '72px',
+        minWidth: '72px',
+        borderRadius: '8px',
+        objectFit: 'cover',
+        background: '#f1f5f9',
+        border: '1px solid #e2e8f0',
     },
     path: {
         color: '#64748b',
         display: 'block',
         fontSize: '12px',
-        marginTop: '5px',
-        maxWidth: '280px',
+        marginTop: '4px',
+        maxWidth: '260px',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
@@ -756,7 +786,8 @@ const styles: Record<string, CSSProperties> = {
     detailLine: {
         color: '#64748b',
         display: 'block',
-        marginTop: '5px',
+        marginTop: '4px',
+        whiteSpace: 'nowrap',
     },
     issueList: {
         display: 'flex',
@@ -784,16 +815,20 @@ const styles: Record<string, CSSProperties> = {
     actions: {
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px',
+        gap: '8px',
+        minWidth: '120px',
     },
     actionButton: {
         background: '#0f172a',
         border: '1px solid #0f172a',
-        borderRadius: '6px',
+        borderRadius: '8px',
         color: '#ffffff',
         cursor: 'pointer',
         fontSize: '12px',
-        padding: '7px 9px',
+        fontWeight: 600,
+        padding: '8px 12px',
+        width: '100%',
+        minHeight: '36px',
     },
     statePanel: {
         background: '#ffffff',
