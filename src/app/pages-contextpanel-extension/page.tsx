@@ -961,6 +961,7 @@ function PagesContextPanel() {
                             {analyzedMedia.map((item) => (
                                 <article key={item.id} style={styles.mediaCard}>
                                     <div style={styles.mediaTop}>
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img alt={item.altText || item.name} src={item.previewUrl} style={styles.preview} />
                                         <div style={styles.mediaInfo}>
                                             <strong>{item.name}</strong>
