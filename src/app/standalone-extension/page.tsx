@@ -330,10 +330,21 @@ function StandaloneExtension() {
                             query: `
         query MediaOptimizerItems {
           search(query: {
-            filterStatement: {
-              AND: [
-                { field: "_path", value: "${projectId}" }
-                { field: "_templatename", value: "Image" }
+            index: "sitecore_master_index"
+            searchStatement: {
+              criteria: [
+                {
+                  field: "_path"
+                  criteriaType: SEARCH
+                  value: "${projectId.replace(/-/g, '').toLowerCase()}"
+                  operator: MUST
+                }
+                {
+                  field: "_templatename"
+                  criteriaType: EXACT
+                  value: "Image"
+                  operator: MUST
+                }
               ]
             }
             paging: { pageSize: 200 }
