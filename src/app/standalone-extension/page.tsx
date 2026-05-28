@@ -284,7 +284,24 @@ function StandaloneExtension() {
             } catch (contextError) {
                 console.error('Error retrieving application.context:', contextError);
             }
-
+            const sqiResult = await client.mutate('xmc.authoring.graphql', {
+                params: {
+                    query: getGraphqlQueryParams(loadedAppContext),
+                    body: {
+                        query: `
+        query IntrospectSearchQueryInput {
+          __type(name: "SearchQueryInput") {
+            inputFields {
+              name
+              type { name kind ofType { name kind } }
+            }
+          }
+        }
+      `,
+                    },
+                },
+            });
+            console.log('SearchQueryInput:', JSON.stringify(sqiResult, null, 2));
             let projectId = '{3D6658D8-A0BF-4E75-B3E2-D050FABCF4E1}';
 
             try {
