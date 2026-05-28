@@ -296,95 +296,100 @@ function StandaloneExtension() {
                         query: getGraphqlQueryParams(loadedAppContext),
                         body: {
                             query: `
-                query MediaOptimizerItems {
-                    search(
-                        query: {
+                        query MediaOptimizerItems {
+                        search(
+                            query: {
                             index: "sitecore_master_index"
-                            searchStatement: {
-                                operator: MUST
-                                subStatements: {
-                                    operator: MUST
-                                    criteria: [
-                                        {
-                                            criteriaType: SEARCH
-                                            field: "_path"
-                                            value: "90ae357f617141ea9808c5600b678f726"
-                                            operator: MUST
-                                        }
-                                    ]
-                                }
-                            }
-                            filterStatement: {
-                                operator: SHOULD
-                                subStatements: {
-                                    operator: SHOULD
-                                    criteria: [
-                                        {
-                                            criteriaType: EXACT
-                                            field: "_templatename"
-                                            value: "Image"
-                                            operator: SHOULD
-                                        }
-                                        {
-                                            criteriaType: EXACT
-                                            field: "_templatename"
-                                            value: "Jpeg"
-                                            operator: SHOULD
-                                        }
-                                        {
-                                            criteriaType: EXACT
-                                            field: "_templatename"
-                                            value: "Png"
-                                            operator: SHOULD
-                                        }
-                                        {
-                                            criteriaType: EXACT
-                                            field: "_templatename"
-                                            value: "Gif"
-                                            operator: SHOULD
-                                        }
-                                        {
-                                            criteriaType: EXACT
-                                            field: "_templatename"
-                                            value: "WebP"
-                                            operator: SHOULD
-                                        }
-                                        {
-                                            criteriaType: EXACT
-                                            field: "_templatename"
-                                            value: "Svg"
-                                            operator: SHOULD
-                                        }
-                                        {
-                                            criteriaType: EXACT
-                                            field: "_templatename"
-                                            value: "Avif"
-                                            operator: SHOULD
-                                        }
-                                    ]
-                                }
-                            }
-                            paging: { pageSize: 1000 }
                             latestVersionOnly: true
-                        }
-                    ) {
-                        results {
+                            paging: { pageSize: 1000 }
+                            searchStatement: {
+                                criteria: [
+                                {
+                                    field: "_path"
+                                    value: "90ae357f61714ea9808c5600b678f726"
+                                    criteriaType: EXACT
+                                    operator: MUST
+                                }
+                                {
+                                    field: "_templatename"
+                                    value: "Image"
+                                    criteriaType: EXACT
+                                    operator: SHOULD
+                                }
+                                {
+                                    field: "_templatename"
+                                    value: "Jpeg"
+                                    criteriaType: EXACT
+                                    operator: SHOULD
+                                }
+                                {
+                                    field: "_templatename"
+                                    value: "Png"
+                                    criteriaType: EXACT
+                                    operator: SHOULD
+                                }
+                                {
+                                    field: "_templatename"
+                                    value: "Gif"
+                                    criteriaType: EXACT
+                                    operator: SHOULD
+                                }
+                                {
+                                    field: "_templatename"
+                                    value: "WebP"
+                                    criteriaType: EXACT
+                                    operator: SHOULD
+                                }
+                                {
+                                    field: "_templatename"
+                                    value: "Svg"
+                                    criteriaType: EXACT
+                                    operator: SHOULD
+                                }
+                                {
+                                    field: "_templatename"
+                                    value: "Avif"
+                                    criteriaType: EXACT
+                                    operator: SHOULD
+                                }
+                                ]
+                            }
+                            }
+                        ) {
+                            total
+                            results {
                             itemId
                             name
                             path
                             templateName
+
                             innerItem {
                                 url
-                                width: field(name: "Width") { value }
-                                height: field(name: "Height") { value }
-                                size: field(name: "Size") { value }
-                                extension: field(name: "Extension") { value }
-                                alt: field(name: "Alt") { value }
+
+                                width: field(name: "Width") {
+                                value
+                                }
+
+                                height: field(name: "Height") {
+                                value
+                                }
+
+                                size: field(name: "Size") {
+                                value
+                                }
+
+                                extension: field(name: "Extension") {
+                                value
+                                }
+
+                                alt: field(name: "Alt") {
+                                value
+                                }
+                            }
                             }
                         }
-                    }
-                }
-            `,
+                        }
+                        `,
                         },
                     },
                 });
