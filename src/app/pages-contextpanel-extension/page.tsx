@@ -413,11 +413,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
                 return undefined;
             }
 
-            const previewUrl = toMediaUrl(
-                item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', item.extension?.value ?? '', mediaOrigin),
-                appContext,
-                mediaOrigin,
-            );
+            const previewUrl = toMediaUrl(item.url || reference.url, appContext, mediaOrigin);
 
             return {
                 id: item.itemId ?? item.id ?? reference.id,
