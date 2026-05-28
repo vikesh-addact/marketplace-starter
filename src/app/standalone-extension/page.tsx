@@ -356,7 +356,6 @@ function StandaloneExtension() {
                             }
                             }
                         ) {
-                            total
                             results {
                             itemId
                             name
