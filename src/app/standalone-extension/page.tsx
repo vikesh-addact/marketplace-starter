@@ -195,26 +195,30 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             return '';
         }
 
-        // already absolute
-        if (/^https?:\/\//i.test(url)) {
-            return url;
-        }
-
         let mediaPath = url;
 
-        // convert Sitecore shell media-library path
+        // already full URL
+        if (/^https?:\/\//i.test(mediaPath)) {
+            return mediaPath.replace('/-/media/', '/-/jssmedia/');
+        }
+
+        // convert Sitecore shell URL
         mediaPath = mediaPath.replace(/\/en\/sitecore\/shell\/sitecore\/media-library/i, '/-/jssmedia');
 
-        // convert normal media path
+        // convert media endpoint
         mediaPath = mediaPath.replace('/-/media/', '/-/jssmedia/');
 
-        const sitecoreHost = appContext?.resourceAccess?.[0]?.hostname || appContext?.resources?.[0]?.hostname || '';
+        // IMPORTANT
+        // use context values that actually exist
+        const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
 
-        if (!sitecoreHost) {
+        const host = resource?.context?.preview || resource?.context?.live || appContext?.url || '';
+
+        if (!host) {
             return mediaPath;
         }
 
-        const normalizedHost = sitecoreHost.replace(/\/$/, '');
+        const normalizedHost = host.replace(/\/$/, '');
 
         return mediaPath.startsWith('/') ? `${normalizedHost}${mediaPath}` : `${normalizedHost}/${mediaPath}`;
     }
@@ -410,7 +414,7 @@ function StandaloneExtension() {
                 });
 
                 console.log('Media search result:', JSON.stringify(mediaResult, null, 2));
-                const items = mapGraphqlMediaItems(mediaResult, loadedAppContext).filter((item) => item.thumbnailUrl || item.name);
+                const items = mapGraphqlMediaItems(mediaResult, loadedAppContext);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
             } catch (mediaError) {
