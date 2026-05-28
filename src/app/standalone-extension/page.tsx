@@ -154,10 +154,12 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
     const data = payload as {
         data?: {
             search?: {
+                total?: number;
                 results?: Array<{
                     itemId?: string;
                     name?: string;
                     path?: string;
+                    templateName?: string;
                     innerItem?: {
                         url?: string;
                         width?: { value?: string };
@@ -170,10 +172,12 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
             };
             data?: {
                 search?: {
+                    total?: number;
                     results?: Array<{
                         itemId?: string;
                         name?: string;
                         path?: string;
+                        templateName?: string;
                         innerItem?: {
                             url?: string;
                             width?: { value?: string };
@@ -206,7 +210,7 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
                 path: result.path,
             };
         })
-        .filter((item) => item.thumbnailUrl && ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format));
+        .filter((item) => ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format));
 }
 
 async function mockOptimizeMedia(item: MediaItem, action: MediaAction): Promise<MediaItem> {
@@ -285,42 +289,6 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            let projectId = '{3D6658D8-A0BF-4E75-B3E2-D050FABCF4E1}';
-
-            try {
-                const pathResult = await client.mutate('xmc.authoring.graphql', {
-                    params: {
-                        query: getGraphqlQueryParams(loadedAppContext),
-                        body: {
-                            query: `
-                          query GetProjectFolder {
-                            item(path: "/sitecore/media library/Project") {
-                              id
-                            }
-                          }
-                        `,
-                        },
-                    },
-                });
-                const pathData = pathResult as {
-                    data?: {
-                        item?: { id: string };
-                        data?: {
-                            item?: { id: string };
-                        };
-                    };
-                };
-                const unwrapped = pathData.data?.data?.item ?? pathData.data?.item;
-                if (unwrapped?.id) {
-                    projectId = unwrapped.id;
-                    console.log('Successfully resolved /sitecore/media library/Project to ID:', projectId);
-                } else {
-                    console.warn('Could not find ID for path /sitecore/media library/Project, using default fallback.');
-                }
-            } catch (pathError) {
-                console.error('Error retrieving ID for /sitecore/media library/Project:', pathError);
-            }
-
             try {
                 setIsLoadingMedia(true);
                 const mediaResult = await client.mutate('xmc.authoring.graphql', {
@@ -329,27 +297,43 @@ function StandaloneExtension() {
                         body: {
                             query: `
         query MediaOptimizerItems {
-          search(query: {
-            index: "sitecore_master_index"
-            searchStatement: {
-              criteria: [
+          search(
+            where: {
+              AND: [
                 {
-                  field: "_path"
-                  criteriaType: SEARCH
-                  value: "${projectId.replace(/-/g, '').toLowerCase()}"
-                  operator: MUST
+                  name: "_path"
+                  value: "{90AE357F-6171-4EA9-808C-5600B678F726}"
+                  operator: CONTAINS
                 }
                 {
-                  field: "_templatename"
-                  criteriaType: EXACT
-                  value: "Image"
-                  operator: MUST
+                  name: "_path"
+                  value: "{8F967E29-9BF0-491E-9279-7261432DBD25}"
+                  operator: NCONTAINS
+                }
+                {
+                  name: "_path"
+                  value: "{9F9DDEA5-2E55-477E-95A2-2C1ECE36D43D}"
+                  operator: NCONTAINS
+                }
+                {
+                  OR: [
+                    {
+                      name: "_templates"
+                      value: "{DAF085E8-602E-43A6-8299-038FF171349F}"
+                      operator: EQ
+                    }
+                    {
+                      name: "_templates"
+                      value: "{F1828A2C-7E5D-4BBD-98CA-320474871548}"
+                      operator: EQ
+                    }
+                  ]
                 }
               ]
             }
-            paging: { pageSize: 200 }
-            latestVersionOnly: true
-          }) {
+            first: 1000
+          ) {
+            total
             results {
               itemId
               name
@@ -371,6 +355,7 @@ function StandaloneExtension() {
                     },
                 });
 
+                console.log('Media search result:', JSON.stringify(mediaResult, null, 2));
                 const items = mapGraphqlMediaItems(mediaResult).filter((item) => item.thumbnailUrl || item.name);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
