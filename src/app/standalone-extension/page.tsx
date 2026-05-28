@@ -312,6 +312,65 @@ function StandaloneExtension() {
             } catch (pathError) {
                 console.error('Error retrieving ID for /sitecore/media library/Project:', pathError);
             }
+            // Step 1: Introspect the schema to find valid search fields
+            try {
+                const introResult = await client.mutate('xmc.authoring.graphql', {
+                    params: {
+                        query: getGraphqlQueryParams(loadedAppContext),
+                        body: {
+                            query: `
+          query IntrospectSearch {
+            __type(name: "SearchResultItem") {
+              name
+              fields {
+                name
+                type {
+                  name
+                  kind
+                  ofType { name kind }
+                }
+              }
+            }
+          }
+        `,
+                        },
+                    },
+                });
+                console.log('SearchResultItem schema:', JSON.stringify(introResult, null, 2));
+            } catch (introError) {
+                console.error('Introspection error:', introError);
+            }
+
+            // Step 2: Introspect the search query arguments
+            try {
+                const queryIntroResult = await client.mutate('xmc.authoring.graphql', {
+                    params: {
+                        query: getGraphqlQueryParams(loadedAppContext),
+                        body: {
+                            query: `
+          query IntrospectQueryRoot {
+            __type(name: "Query") {
+              fields {
+                name
+                args {
+                  name
+                  type {
+                    name
+                    kind
+                    ofType { name kind }
+                  }
+                }
+              }
+            }
+          }
+        `,
+                        },
+                    },
+                });
+                console.log('Query root fields:', JSON.stringify(queryIntroResult, null, 2));
+            } catch (queryIntroError) {
+                console.error('Query introspection error:', queryIntroError);
+            }
 
             try {
                 setIsLoadingMedia(true);
@@ -347,6 +406,7 @@ function StandaloneExtension() {
                         },
                     },
                 });
+
                 const items = mapGraphqlMediaItems(mediaResult).filter((item) => item.thumbnailUrl || item.name);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
