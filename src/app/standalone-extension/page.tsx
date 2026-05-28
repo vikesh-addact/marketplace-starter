@@ -190,40 +190,30 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
         };
     };
 
-    function toMediaUrl(url?: string, mediaOrigin = ''): string {
+    function toMediaUrl(url?: string, appContext?: ApplicationContext): string {
         if (!url) {
             return '';
         }
 
-        if (url.startsWith('data:')) {
-            return url;
-        }
-
+        // already absolute
         if (/^https?:\/\//i.test(url)) {
             return url.replace('/-/media/', '/-/jssmedia/');
         }
 
-        const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
+        // convert media path
+        const mediaPath = url.replace('/-/media/', '/-/jssmedia/');
 
-        if (normalizedUrl.startsWith('/')) {
-            if (mediaOrigin) {
-                return `${mediaOrigin}${normalizedUrl}`;
-            }
+        // Sitecore host
+        const sitecoreHost = appContext?.resourceAccess?.[0]?.hostname || appContext?.resources?.[0]?.hostname || appContext?.url || '';
 
-            if (typeof window !== 'undefined') {
-                return `${window.location.origin}${normalizedUrl}`;
-            }
-
-            return normalizedUrl;
+        if (!sitecoreHost) {
+            return mediaPath;
         }
 
-        const baseUrl = appContext?.url?.replace(/\/$/, '');
+        const normalizedHost = sitecoreHost.replace(/\/$/, '');
 
-        if (baseUrl && /^https?:\/\//i.test(baseUrl)) {
-            return `${baseUrl}/${normalizedUrl}`;
-        }
-
-        return normalizedUrl;
+        // ensure full absolute URL
+        return mediaPath.startsWith('/') ? `${normalizedHost}${mediaPath}` : `${normalizedHost}/${mediaPath}`;
     }
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
@@ -236,7 +226,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             return {
                 id: result.itemId ?? `media-${index}`,
                 name: result.name ?? `Media ${index + 1}`,
-                thumbnailUrl: toMediaUrl(inner?.url),
+                thumbnailUrl: toMediaUrl(inner?.url, appContext),
                 width: Number(inner?.width?.value) || 0,
                 height: Number(inner?.height?.value) || 0,
                 sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
