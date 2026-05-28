@@ -296,61 +296,95 @@ function StandaloneExtension() {
                         query: getGraphqlQueryParams(loadedAppContext),
                         body: {
                             query: `
-        query MediaOptimizerItems {
-          search(
-            where: {
-              AND: [
-                {
-                  name: "_path"
-                  value: "{90AE357F-6171-4EA9-808C-5600B678F726}"
-                  operator: CONTAINS
-                }
-                {
-                  name: "_path"
-                  value: "{8F967E29-9BF0-491E-9279-7261432DBD25}"
-                  operator: NCONTAINS
-                }
-                {
-                  name: "_path"
-                  value: "{9F9DDEA5-2E55-477E-95A2-2C1ECE36D43D}"
-                  operator: NCONTAINS
-                }
-                {
-                  OR: [
-                    {
-                      name: "_templates"
-                      value: "{DAF085E8-602E-43A6-8299-038FF171349F}"
-                      operator: EQ
+                query MediaOptimizerItems {
+                    search(
+                        query: {
+                            index: "sitecore_master_index"
+                            searchStatement: {
+                                operator: MUST
+                                subStatements: {
+                                    operator: MUST
+                                    criteria: [
+                                        {
+                                            criteriaType: SEARCH
+                                            field: "_path"
+                                            value: "90ae357f617141ea9808c5600b678f726"
+                                            operator: MUST
+                                        }
+                                    ]
+                                }
+                            }
+                            filterStatement: {
+                                operator: SHOULD
+                                subStatements: {
+                                    operator: SHOULD
+                                    criteria: [
+                                        {
+                                            criteriaType: EXACT
+                                            field: "_templatename"
+                                            value: "Image"
+                                            operator: SHOULD
+                                        }
+                                        {
+                                            criteriaType: EXACT
+                                            field: "_templatename"
+                                            value: "Jpeg"
+                                            operator: SHOULD
+                                        }
+                                        {
+                                            criteriaType: EXACT
+                                            field: "_templatename"
+                                            value: "Png"
+                                            operator: SHOULD
+                                        }
+                                        {
+                                            criteriaType: EXACT
+                                            field: "_templatename"
+                                            value: "Gif"
+                                            operator: SHOULD
+                                        }
+                                        {
+                                            criteriaType: EXACT
+                                            field: "_templatename"
+                                            value: "WebP"
+                                            operator: SHOULD
+                                        }
+                                        {
+                                            criteriaType: EXACT
+                                            field: "_templatename"
+                                            value: "Svg"
+                                            operator: SHOULD
+                                        }
+                                        {
+                                            criteriaType: EXACT
+                                            field: "_templatename"
+                                            value: "Avif"
+                                            operator: SHOULD
+                                        }
+                                    ]
+                                }
+                            }
+                            paging: { pageSize: 1000 }
+                            latestVersionOnly: true
+                        }
+                    ) {
+                        results {
+                            itemId
+                            name
+                            path
+                            templateName
+                            innerItem {
+                                url
+                                width: field(name: "Width") { value }
+                                height: field(name: "Height") { value }
+                                size: field(name: "Size") { value }
+                                extension: field(name: "Extension") { value }
+                                alt: field(name: "Alt") { value }
+                            }
+                        }
                     }
-                    {
-                      name: "_templates"
-                      value: "{F1828A2C-7E5D-4BBD-98CA-320474871548}"
-                      operator: EQ
-                    }
-                  ]
                 }
-              ]
-            }
-            first: 1000
-          ) {
-            total
-            results {
-              itemId
-              name
-              path
-              templateName
-              innerItem {
-                url
-                width: field(name: "Width") { value }
-                height: field(name: "Height") { value }
-                size: field(name: "Size") { value }
-                extension: field(name: "Extension") { value }
-                alt: field(name: "Alt") { value }
-              }
-            }
-          }
-        }
-      `,
+            `,
                         },
                     },
                 });
