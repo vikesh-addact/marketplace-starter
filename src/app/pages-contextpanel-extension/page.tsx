@@ -97,41 +97,35 @@ function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = 
         return '';
     }
 
-    if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
+    if (url.startsWith('data:')) {
         return url;
+    }
+
+    if (/^https?:\/\//i.test(url)) {
+        return url.replace('/-/media/', '/-/jssmedia/');
     }
 
     const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
 
-    if (url.startsWith('/')) {
-        return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
+    if (normalizedUrl.startsWith('/')) {
+        if (mediaOrigin) {
+            return `${mediaOrigin}${normalizedUrl}`;
+        }
+
+        if (typeof window !== 'undefined') {
+            return `${window.location.origin}${normalizedUrl}`;
+        }
+
+        return normalizedUrl;
     }
 
     const baseUrl = appContext?.url?.replace(/\/$/, '');
-    return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
-}
 
-function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
-    const mediaLibraryMarker = '/sitecore/media library/';
-    const markerIndex = path.toLowerCase().indexOf(mediaLibraryMarker);
-
-    if (markerIndex === -1) {
-        return '';
+    if (baseUrl && /^https?:\/\//i.test(baseUrl)) {
+        return `${baseUrl}/${normalizedUrl}`;
     }
 
-    const relativePath = path
-        .slice(markerIndex + mediaLibraryMarker.length)
-        .split('/')
-        .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
-        .join('/');
-    const normalizedExtension = extension.replace('.', '').toLowerCase();
-    const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
-
-    if (!origin) {
-        return '';
-    }
-
-    return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
+    return normalizedUrl;
 }
 
 function getMediaOrigin(references: MediaReference[]) {
@@ -962,14 +956,26 @@ function PagesContextPanel() {
                                 <article key={item.id} style={styles.mediaCard}>
                                     <div style={styles.mediaTop}>
                                         <img alt={item.altText || item.name} src={item.previewUrl} style={styles.preview} />
+
                                         <div style={styles.mediaInfo}>
-                                            <strong>{item.name}</strong>
-                                            <span style={styles.meta}>{item.source}</span>
-                                            <span style={styles.meta}>
-                                                {item.width || '?'} x {item.height || '?'} / {formatSize(item.sizeKb)} / {item.format.toUpperCase()}
-                                            </span>
+                                            <div style={styles.mediaName}>{item.name}</div>
+
+                                            <div style={styles.mediaPath}>{item.source}</div>
+
+                                            <div style={styles.meta}>{item.previewUrl}</div>
                                         </div>
-                                        <ScoreIndicator score={item.score} />
+
+                                        <div style={styles.detailsColumn}>
+                                            <ScoreIndicator score={item.score} />
+
+                                            <span style={styles.detailBadge}>
+                                                {item.width || '?'} × {item.height || '?'}
+                                            </span>
+
+                                            <span style={styles.detailBadge}>{formatSize(item.sizeKb)}</span>
+
+                                            <span style={styles.detailBadge}>{item.format.toUpperCase()}</span>
+                                        </div>
                                     </div>
 
                                     <div style={styles.altRow}>
@@ -1156,33 +1162,73 @@ const styles: Record<string, CSSProperties> = {
         gap: '10px',
     },
     mediaCard: {
+        background: '#ffffff',
         border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        padding: '10px',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        padding: '14px',
     },
+
     mediaTop: {
         alignItems: 'flex-start',
+        columnGap: '14px',
         display: 'grid',
-        gap: '9px',
-        gridTemplateColumns: '64px minmax(0, 1fr) auto',
+        gridTemplateColumns: '84px minmax(0, 1fr) 120px',
     },
     preview: {
-        aspectRatio: '1 / 1',
-        borderRadius: '6px',
-        height: '64px',
+        background: '#f1f5f9',
+        border: '1px solid #e2e8f0',
+        borderRadius: '10px',
+        height: '84px',
         objectFit: 'cover',
-        width: '64px',
+        width: '84px',
     },
     mediaInfo: {
-        display: 'grid',
-        gap: '3px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
         minWidth: 0,
     },
     meta: {
         color: '#64748b',
         fontSize: '12px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
+        lineHeight: 1.45,
+        overflowWrap: 'anywhere',
+        whiteSpace: 'normal',
+    },
+    mediaName: {
+        color: '#0f172a',
+        fontSize: '14px',
+        fontWeight: 700,
+        lineHeight: 1.3,
+        overflowWrap: 'anywhere',
+    },
+
+    mediaPath: {
+        color: '#475569',
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        lineHeight: 1.5,
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word',
+    },
+
+    detailsColumn: {
+        alignItems: 'flex-end',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        minWidth: '110px',
+    },
+
+    detailBadge: {
+        background: '#f8fafc',
+        border: '1px solid #e2e8f0',
+        borderRadius: '999px',
+        color: '#334155',
+        fontSize: '11px',
+        fontWeight: 600,
+        padding: '5px 9px',
         whiteSpace: 'nowrap',
     },
     altRow: {
