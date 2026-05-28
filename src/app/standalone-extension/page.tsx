@@ -189,38 +189,55 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             };
         };
     };
+    const mediaOrigin = getHostMediaOrigin(appContext);
+    type XmCloudAppContext = ApplicationContext & {
+        xmCloudTenantInfo?: {
+            url?: string;
+        };
+        host?: {
+            xmCloudTenantInfo?: {
+                url?: string;
+            };
+        };
+    };
+    function getHostMediaOrigin(appContext?: ApplicationContext): string {
+        const context = appContext as XmCloudAppContext;
 
-    function toMediaUrl(url?: string, appContext?: ApplicationContext): string {
+        const hostUrl = context.xmCloudTenantInfo?.url || context.host?.xmCloudTenantInfo?.url;
+
+        if (!hostUrl) {
+            return '';
+        }
+
+        try {
+            return new URL(hostUrl).origin;
+        } catch {
+            return hostUrl.replace(/\/$/, '');
+        }
+    }
+
+    function toMediaUrl(url?: string, mediaOrigin = ''): string {
         if (!url) {
             return '';
         }
 
-        let mediaPath = url;
-
-        // already full URL
-        if (/^https?:\/\//i.test(mediaPath)) {
-            return mediaPath.replace('/-/media/', '/-/jssmedia/');
+        // absolute URL
+        if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
+            return url.replace('/-/media/', '/-/jssmedia/');
         }
 
-        // convert Sitecore shell URL
-        mediaPath = mediaPath.replace(/\/en\/sitecore\/shell\/sitecore\/media-library/i, '/-/jssmedia');
+        // convert Sitecore shell media path
+        let normalizedUrl = url.replace(/\/en\/sitecore\/shell\/sitecore\/media-library/i, '/-/jssmedia');
 
-        // convert media endpoint
-        mediaPath = mediaPath.replace('/-/media/', '/-/jssmedia/');
+        // convert standard media endpoint
+        normalizedUrl = normalizedUrl.replace('/-/media/', '/-/jssmedia/');
 
-        // IMPORTANT
-        // use context values that actually exist
-        const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
-
-        const host = resource?.context?.preview || resource?.context?.live || appContext?.url || '';
-
-        if (!host) {
-            return mediaPath;
+        // build final URL
+        if (normalizedUrl.startsWith('/')) {
+            return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
         }
 
-        const normalizedHost = host.replace(/\/$/, '');
-
-        return mediaPath.startsWith('/') ? `${normalizedHost}${mediaPath}` : `${normalizedHost}/${mediaPath}`;
+        return mediaOrigin ? `${mediaOrigin}/${normalizedUrl}` : normalizedUrl;
     }
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
@@ -233,7 +250,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             return {
                 id: result.itemId ?? `media-${index}`,
                 name: result.name ?? `Media ${index + 1}`,
-                thumbnailUrl: toMediaUrl(inner?.url, appContext),
+                thumbnailUrl: toMediaUrl(inner?.url, mediaOrigin),
                 width: Number(inner?.width?.value) || 0,
                 height: Number(inner?.height?.value) || 0,
                 sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
@@ -566,6 +583,7 @@ function StandaloneExtension() {
                                         <tr key={item.id} style={styles.tr}>
                                             <td style={styles.td}>
                                                 <div style={styles.mediaCell}>
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
                                                     <img alt={item.altText || item.name} src={item.thumbnailUrl} style={styles.thumbnail} />
                                                     <div>
                                                         <strong>{item.name}</strong>
