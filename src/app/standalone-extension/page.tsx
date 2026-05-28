@@ -155,29 +155,33 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
         data?: {
             search?: {
                 results?: Array<{
-                    id?: string;
+                    itemId?: string;
                     name?: string;
                     path?: string;
-                    url?: string;
-                    width?: { value?: string };
-                    height?: { value?: string };
-                    size?: { value?: string };
-                    extension?: { value?: string };
-                    alt?: { value?: string };
-                }>;
-            };
-            data?: {
-                search?: {
-                    results?: Array<{
-                        id?: string;
-                        name?: string;
-                        path?: string;
+                    innerItem?: {
                         url?: string;
                         width?: { value?: string };
                         height?: { value?: string };
                         size?: { value?: string };
                         extension?: { value?: string };
                         alt?: { value?: string };
+                    } | null;
+                }>;
+            };
+            data?: {
+                search?: {
+                    results?: Array<{
+                        itemId?: string;
+                        name?: string;
+                        path?: string;
+                        innerItem?: {
+                            url?: string;
+                            width?: { value?: string };
+                            height?: { value?: string };
+                            size?: { value?: string };
+                            extension?: { value?: string };
+                            alt?: { value?: string };
+                        } | null;
                     }>;
                 };
             };
@@ -187,18 +191,22 @@ function mapGraphqlMediaItems(payload: unknown): MediaItem[] {
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
     return results
-        .map((item, index) => ({
-            id: item?.id ?? `media-${index}`,
-            name: item?.name ?? `Media ${index + 1}`,
-            thumbnailUrl: item?.url ?? '',
-            width: Number(item?.width?.value) || 0,
-            height: Number(item?.height?.value) || 0,
-            sizeKb: Math.round((Number(item?.size?.value) || 0) / 1024),
-            format: item?.extension?.value?.replace('.', '') || 'unknown',
-            altText: item?.alt?.value ?? '',
-            path: item?.path,
-        }))
-        .filter((item) => item.format !== 'unknown' && !['aspx', 'xml', 'html'].includes(item.format));
+        .map((result, index) => {
+            const inner = result.innerItem;
+            const ext = inner?.extension?.value?.replace('.', '').toLowerCase() ?? 'unknown';
+            return {
+                id: result.itemId ?? `media-${index}`,
+                name: result.name ?? `Media ${index + 1}`,
+                thumbnailUrl: inner?.url ?? '',
+                width: Number(inner?.width?.value) || 0,
+                height: Number(inner?.height?.value) || 0,
+                sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
+                format: ext,
+                altText: inner?.alt?.value ?? '',
+                path: result.path,
+            };
+        })
+        .filter((item) => item.thumbnailUrl && ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format));
 }
 
 async function mockOptimizeMedia(item: MediaItem, action: MediaAction): Promise<MediaItem> {
@@ -312,65 +320,6 @@ function StandaloneExtension() {
             } catch (pathError) {
                 console.error('Error retrieving ID for /sitecore/media library/Project:', pathError);
             }
-            // Step 1: Introspect the schema to find valid search fields
-            try {
-                const introResult = await client.mutate('xmc.authoring.graphql', {
-                    params: {
-                        query: getGraphqlQueryParams(loadedAppContext),
-                        body: {
-                            query: `
-          query IntrospectSearch {
-            __type(name: "SearchResultItem") {
-              name
-              fields {
-                name
-                type {
-                  name
-                  kind
-                  ofType { name kind }
-                }
-              }
-            }
-          }
-        `,
-                        },
-                    },
-                });
-                console.log('SearchResultItem schema:', JSON.stringify(introResult, null, 2));
-            } catch (introError) {
-                console.error('Introspection error:', introError);
-            }
-
-            // Step 2: Introspect the search query arguments
-            try {
-                const queryIntroResult = await client.mutate('xmc.authoring.graphql', {
-                    params: {
-                        query: getGraphqlQueryParams(loadedAppContext),
-                        body: {
-                            query: `
-          query IntrospectQueryRoot {
-            __type(name: "Query") {
-              fields {
-                name
-                args {
-                  name
-                  type {
-                    name
-                    kind
-                    ofType { name kind }
-                  }
-                }
-              }
-            }
-          }
-        `,
-                        },
-                    },
-                });
-                console.log('Query root fields:', JSON.stringify(queryIntroResult, null, 2));
-            } catch (queryIntroError) {
-                console.error('Query introspection error:', queryIntroError);
-            }
 
             try {
                 setIsLoadingMedia(true);
@@ -379,30 +328,28 @@ function StandaloneExtension() {
                         query: getGraphqlQueryParams(loadedAppContext),
                         body: {
                             query: `
-                          query MediaOptimizerItems {
-                            search(
-                              where: {
-                                AND: [
-                                  { name: "_path", value: "${projectId}", operator: CONTAINS }
-                                  { name: "_template", value: "Image", operator: CONTAINS }
-                                ]
-                              }
-                              first: 200
-                            ) {
-                              results {
-                                id
-                                name
-                                path
-                                url
-                                width: field(name: "Width") { value }
-                                height: field(name: "Height") { value }
-                                size: field(name: "Size") { value }
-                                extension: field(name: "Extension") { value }
-                                alt: field(name: "Alt") { value }
-                              }
-                            }
-                          }
-                        `,
+        query MediaOptimizerItems {
+          search(query: {
+            rootItem: "${projectId}"
+            fieldsEqual: [{ name: "_template", value: "Image" }]
+          }) {
+            results {
+              itemId
+              name
+              path
+              templateName
+              innerItem {
+                url
+                width: field(name: "Width") { value }
+                height: field(name: "Height") { value }
+                size: field(name: "Size") { value }
+                extension: field(name: "Extension") { value }
+                alt: field(name: "Alt") { value }
+              }
+            }
+          }
+        }
+      `,
                         },
                     },
                 });
