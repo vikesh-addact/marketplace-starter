@@ -20,12 +20,6 @@ interface MediaItem {
     altText: string;
     path?: string;
 }
-interface HostStateContext {
-    xmCloudTenantInfo?: {
-        url?: string;
-    };
-}
-
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 const defaultMediaHostOrigin = 'https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io';
 
@@ -108,7 +102,7 @@ function getMediaIssues(item: MediaItem): MediaIssue[] {
         issues.push('missingAlt');
     }
 
-    if (item.sizeKb > 500 || item.width > 2000) {
+    if (item.sizeKb > 500) {
         issues.push('largeImage');
     }
 
@@ -195,31 +189,6 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
             };
         };
     };
-
-    type XmCloudAppContext = ApplicationContext & {
-        xmCloudTenantInfo?: {
-            url?: string;
-        };
-        host?: {
-            xmCloudTenantInfo?: {
-                url?: string;
-            };
-        };
-    };
-
-    function getHostMediaOrigin(hostState?: HostStateContext) {
-        const hostUrl = hostState?.xmCloudTenantInfo?.url;
-
-        if (!hostUrl) {
-            return '';
-        }
-
-        try {
-            return new URL(hostUrl).origin;
-        } catch {
-            return hostUrl.replace(/\/$/, '');
-        }
-    }
 
     function resolveOrigin(url?: string) {
         if (!url) {
@@ -313,7 +282,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
     }
 
     function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
-        const resolvedOrigin = origin || resolveOrigin(appContext?.url);
+        const resolvedOrigin = origin;
 
         // If the url contains the sitecore media-library path, convert it to jssmedia URL
         if (isSitecoreMediaLibraryUrl(url)) {
@@ -351,63 +320,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         return normalizedUrl;
     }
 
-    const xmCloudContext = appContext as XmCloudAppContext | undefined;
-
-    const getMediaOriginFromResources = (appCtx?: ApplicationContext) => {
-        const resources = [...(appCtx?.resourceAccess ?? []), ...(appCtx?.resources ?? [])];
-        for (const res of resources) {
-            const url = res?.endpoint ?? res?.url;
-            if (url && /^https?:\/\//i.test(url)) {
-                try {
-                    const origin = new URL(url).origin;
-                    if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
-                        return origin;
-                    }
-                } catch {
-                    // ignore
-                }
-            }
-        }
-        return '';
-    };
-
-    const getMediaOriginFromContext = (appCtx?: ApplicationContext) => {
-        const resourceOrigin = getMediaOriginFromResources(appCtx);
-        if (resourceOrigin) {
-            return resourceOrigin;
-        }
-
-        const contextId = getSitecoreContextId(appCtx);
-        if (!contextId) {
-            return '';
-        }
-        if (/^https?:\/\//i.test(contextId)) {
-            try {
-                return new URL(contextId).origin;
-            } catch {
-                return contextId.replace(/\/$/, '');
-            }
-        }
-        if (contextId.includes('.')) {
-            return `https://${contextId}`;
-        }
-        return '';
-    };
-
-    const getAppContextUrlOrigin = (appCtx?: ApplicationContext) => {
-        if (!appCtx?.url) {
-            return '';
-        }
-        return resolveOrigin(appCtx.url);
-    };
-
-    const mediaOrigin =
-        mediaOriginOverride ||
-        getHostMediaOrigin(xmCloudContext?.host) ||
-        getHostMediaOrigin(xmCloudContext) ||
-        getMediaOriginFromContext(appContext) ||
-        getAppContextUrlOrigin(appContext) ||
-        '';
+    const mediaOrigin = mediaOriginOverride;
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
@@ -428,7 +341,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
                 path: result.path,
             };
         })
-        .filter((item) => ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format));
+        .filter((item) => ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format) && !item.name.toLowerCase().startsWith('thumbnail'));
 }
 
 async function mockOptimizeMedia(item: MediaItem, action: MediaAction): Promise<MediaItem> {
@@ -493,7 +406,6 @@ function StandaloneExtension() {
 
             try {
                 const contextResult = await client.query('application.context');
-                console.log('Success retrieving application.context:', contextResult.data);
                 loadedAppContext = contextResult.data;
                 setAppContext(contextResult.data);
 
@@ -507,81 +419,7 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            let hostOrigin = '';
-
-            if (loadedAppContext) {
-                // Try to get XM Cloud host origin from the resource access/resources endpoints first
-                // Prioritize sitecorecloud.io URLs
-                const resources = [...(loadedAppContext?.resourceAccess ?? []), ...(loadedAppContext?.resources ?? [])];
-
-                // First pass: look for sitecorecloud.io URLs
-                for (const res of resources) {
-                    const url = res?.endpoint ?? res?.url;
-                    if (url && /^https?:\/\//i.test(url) && url.includes('sitecorecloud.io')) {
-                        try {
-                            hostOrigin = new URL(url).origin;
-                            break;
-                        } catch {
-                            // ignore
-                        }
-                    }
-                }
-
-                // Second pass: look for any non-localhost, non-vercel URL
-                if (!hostOrigin) {
-                    for (const res of resources) {
-                        const url = res?.endpoint ?? res?.url;
-                        if (url && /^https?:\/\//i.test(url)) {
-                            try {
-                                const origin = new URL(url).origin;
-                                if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
-                                    hostOrigin = origin;
-                                    break;
-                                }
-                            } catch {
-                                // ignore
-                            }
-                        }
-                    }
-                }
-
-                // Third pass: fall back to appContext.url origin if it looks like an XM Cloud URL
-                if (!hostOrigin && loadedAppContext.url) {
-                    try {
-                        const contextOrigin = new URL(loadedAppContext.url).origin;
-                        if (contextOrigin && !contextOrigin.includes('localhost') && !contextOrigin.includes('vercel.app')) {
-                            hostOrigin = contextOrigin;
-                        }
-                    } catch {
-                        // ignore
-                    }
-                }
-
-                // Final fallback: try contextId if it looks like a hostname
-                if (!hostOrigin) {
-                    const contextId = getSitecoreContextId(loadedAppContext);
-                    if (contextId && contextId.includes('.') && !contextId.includes('localhost') && !contextId.includes('vercel.app')) {
-                        hostOrigin = contextId.startsWith('http') ? contextId : `https://${contextId}`;
-                        try {
-                            hostOrigin = new URL(hostOrigin).origin;
-                        } catch {
-                            hostOrigin = '';
-                        }
-                    }
-                }
-
-                if (!hostOrigin) {
-                    hostOrigin = defaultMediaHostOrigin;
-                }
-
-                console.log('[MediaOptimizer] Media host resolution details:', {
-                    hostOrigin,
-                    defaultMediaHostOrigin,
-                    sitecoreContextId: getSitecoreContextId(loadedAppContext),
-                    appContext: loadedAppContext,
-                    resources: [...(loadedAppContext?.resourceAccess ?? []), ...(loadedAppContext?.resources ?? [])],
-                });
-            }
+            let hostOrigin = defaultMediaHostOrigin;
 
             try {
                 setIsLoadingMedia(true);
@@ -675,7 +513,6 @@ function StandaloneExtension() {
                     },
                 });
 
-                console.log('Media search result:', JSON.stringify(mediaResult, null, 2));
                 const items = mapGraphqlMediaItems(mediaResult, loadedAppContext, hostOrigin);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
