@@ -114,44 +114,18 @@ function getHostMediaOrigin(hostState?: HostStateContext) {
 }
 
 function getResolvedMediaOrigin(appContext?: ApplicationContext, hostState?: HostStateContext) {
+    // STATIC OVERRIDE for debugging/immediate fix
+    const staticDomain = 'https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io';
+
+    // Log the contexts so the user can inspect them in the console
+    console.log('[MediaOptimizer] Debug - appContext:', appContext);
+    console.log('[MediaOptimizer] Debug - hostState:', hostState);
+
     // 1. Try host.state (matches PagesContextPanel logic)
     const hostOrigin = getHostMediaOrigin(hostState);
-    if (hostOrigin) {
-        return hostOrigin;
-    }
 
-    if (!appContext) {
-        return '';
-    }
-
-    // 2. Try to extract from Authoring API or other sitecorecloud.io resources
-    const resources = [...(appContext.resourceAccess ?? []), ...(appContext.resources ?? [])];
-    for (const res of resources) {
-        const url = res?.endpoint ?? res?.url;
-        if (url && /^https?:\/\//i.test(url) && url.includes('sitecorecloud.io')) {
-            try {
-                const origin = new URL(url).origin;
-                if (origin) {
-                    return origin;
-                }
-            } catch {
-                // ignore
-            }
-        }
-    }
-
-    // 3. Try Sitecore Context ID as a fallback hostname
-    const contextId = getSitecoreContextId(appContext);
-    if (contextId && contextId.includes('.') && !contextId.includes('localhost') && !contextId.includes('vercel.app')) {
-        const url = contextId.startsWith('http') ? contextId : `https://${contextId}`;
-        try {
-            return new URL(url).origin;
-        } catch {
-            // ignore
-        }
-    }
-
-    return '';
+    // Return static domain if it exists, otherwise fall back to resolution logic
+    return staticDomain || hostOrigin || '';
 }
 
 function safeText(value: unknown): string {
