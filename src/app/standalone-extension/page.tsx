@@ -219,7 +219,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
         }
     }
 
-    function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = '') {
+    function toMediaUrl(url?: string, mediaOrigin = '', appContext?: ApplicationContext) {
         if (!url) {
             return '';
         }
@@ -236,29 +236,6 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
 
         const baseUrl = appContext?.url?.replace(/\/$/, '');
         return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
-    }
-
-    function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
-        const mediaLibraryMarker = '/sitecore/media library/';
-        const markerIndex = path.toLowerCase().indexOf(mediaLibraryMarker);
-
-        if (markerIndex === -1) {
-            return '';
-        }
-
-        const relativePath = path
-            .slice(markerIndex + mediaLibraryMarker.length)
-            .split('/')
-            .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
-            .join('/');
-        const normalizedExtension = extension.replace('.', '').toLowerCase();
-        const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
-
-        if (!origin) {
-            return '';
-        }
-
-        return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
     }
 
     const xmCloudContext = appContext as XmCloudAppContext | undefined;
