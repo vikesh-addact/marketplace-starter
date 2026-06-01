@@ -6,7 +6,7 @@ import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/cl
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
-type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect';
+type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
 type ActionState = 'idle' | 'working' | 'done' | 'failed';
 
 interface MediaItem {
@@ -592,6 +592,21 @@ function StandaloneExtension() {
             return;
         }
 
+        if (action === 'copyPath' || action === 'copyId') {
+            try {
+                const textToCopy = action === 'copyPath' ? (item.path ?? '') : item.id;
+                if (!textToCopy) {
+                    throw new Error('No text available to copy');
+                }
+                await navigator.clipboard.writeText(textToCopy);
+                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+            } catch (actionError) {
+                console.error(`Error copying ${action === 'copyPath' ? 'path' : 'ID'}:`, actionError);
+                setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
+            }
+            return;
+        }
+
         try {
             const updatedItem = await mockOptimizeMedia(item, action);
             setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? updatedItem : mediaItem)));
@@ -712,16 +727,14 @@ function StandaloneExtension() {
                                                         onClick={() => runAction(item.id, 'optimize')}
                                                     />
                                                     <ActionButton
-                                                        label="WebP"
-                                                        disabled
-                                                        state={actionStates[`${item.id}-webp`] ?? 'idle'}
-                                                        onClick={() => runAction(item.id, 'webp')}
+                                                        label="Copy path"
+                                                        state={actionStates[`${item.id}-copyPath`] ?? 'idle'}
+                                                        onClick={() => runAction(item.id, 'copyPath')}
                                                     />
                                                     <ActionButton
-                                                        label="Ratio"
-                                                        disabled
-                                                        state={actionStates[`${item.id}-aspect`] ?? 'idle'}
-                                                        onClick={() => runAction(item.id, 'aspect')}
+                                                        label="Copy ID"
+                                                        state={actionStates[`${item.id}-copyId`] ?? 'idle'}
+                                                        onClick={() => runAction(item.id, 'copyId')}
                                                     />
                                                 </div>
                                             </td>
