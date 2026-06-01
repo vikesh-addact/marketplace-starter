@@ -289,17 +289,37 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
     }
 
     function isSitecoreMediaLibraryUrl(url?: string) {
-        return Boolean(url && /\/sitecore\/(shell\/)?sitecore\/media-library\//i.test(url));
+        if (!url) return false;
+        // Match both relative paths and absolute URLs that contain the sitecore media-library path
+        return /\/sitecore\/(shell\/)?sitecore\/media-library\//i.test(url);
+    }
+
+    function stripOriginFromAbsoluteUrl(url: string): string {
+        try {
+            const parsed = new URL(url);
+            return parsed.pathname + parsed.search;
+        } catch {
+            return url;
+        }
     }
 
     function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
         const resolvedOrigin = origin || resolveOrigin(appContext?.url);
 
+        // If the url (relative or absolute) contains the sitecore media-library path, 
+        // convert it to a proper jssmedia URL using the item path (most reliable) or the url itself.
         if (isSitecoreMediaLibraryUrl(url)) {
-            const mediaUrl = mediaPathToUrlWithOrigin(path ?? url ?? '', extension, resolvedOrigin);
+            // Prefer item path from GraphQL (e.g. /sitecore/media library/Project/...)
+            const sourcePath = path ?? stripOriginFromAbsoluteUrl(url ?? '');
+            const mediaUrl = mediaPathToUrlWithOrigin(sourcePath, extension, resolvedOrigin);
             if (mediaUrl) {
                 return mediaUrl;
             }
+        }
+
+        // If the url is absolute but does NOT contain media-library, return as-is.
+        if (url && /^https?:\/\//i.test(url) && !isSitecoreMediaLibraryUrl(url)) {
+            return url;
         }
 
         const normalizedUrl = toMediaUrl(url, resolvedOrigin, appContext);
@@ -482,10 +502,11 @@ function StandaloneExtension() {
                     }
                 }
 
-                // If not found in endpoints, fall back to the contextId
+                // If not found in endpoints, fall back to the contextId only if it
+                // looks like a real hostname (contains a dot) — not a plain resource ID.
                 if (!hostOrigin) {
                     const contextId = getSitecoreContextId(loadedAppContext);
-                    if (contextId) {
+                    if (contextId && contextId.includes('.')) {
                         hostOrigin = contextId.startsWith('http') ? contextId : `https://${contextId}`;
                         try {
                             hostOrigin = new URL(hostOrigin).origin;
@@ -494,6 +515,8 @@ function StandaloneExtension() {
                         }
                     }
                 }
+
+                console.log('[MediaOptimizer] Resolved hostOrigin:', hostOrigin || '(none — media URLs may not load correctly)');
             }
 
             try {
