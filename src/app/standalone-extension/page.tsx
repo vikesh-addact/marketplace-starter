@@ -205,8 +205,8 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
         };
     };
 
-    function getHostMediaOrigin(hostState?: HostStateContext, fallbackUrl?: string) {
-        const hostUrl = hostState?.xmCloudTenantInfo?.url ?? fallbackUrl;
+    function getHostMediaOrigin(hostState?: HostStateContext) {
+        const hostUrl = hostState?.xmCloudTenantInfo?.url;
 
         if (!hostUrl) {
             return '';
@@ -268,27 +268,34 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
         return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
     }
 
-    function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
-        const normalizedUrl = toMediaUrl(url, origin, appContext);
+    function isSitecoreMediaLibraryUrl(url?: string) {
+        return Boolean(url && /\/sitecore\/(shell\/)?sitecore\/media-library\//i.test(url));
+    }
 
-        if (normalizedUrl && /\/sitecore\/(shell\/)?sitecore\/media-library\//i.test(normalizedUrl)) {
-            return mediaPathToUrlWithOrigin(path ?? normalizedUrl, extension, origin) || normalizedUrl;
+    function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
+        if (isSitecoreMediaLibraryUrl(url)) {
+            const mediaUrl = mediaPathToUrlWithOrigin(path ?? url ?? '', extension, origin);
+            if (mediaUrl) {
+                return mediaUrl;
+            }
         }
 
-        if (normalizedUrl) {
+        const normalizedUrl = toMediaUrl(url, origin, appContext);
+
+        if (normalizedUrl && !isSitecoreMediaLibraryUrl(normalizedUrl)) {
             return normalizedUrl;
         }
 
         if (path) {
-            return mediaPathToUrlWithOrigin(path, extension, origin);
+            return mediaPathToUrlWithOrigin(path, extension, origin) || normalizedUrl;
         }
 
-        return '';
+        return normalizedUrl;
     }
 
     const xmCloudContext = appContext as XmCloudAppContext | undefined;
 
-    const mediaOrigin = getHostMediaOrigin(xmCloudContext?.host, appContext?.url) || getHostMediaOrigin(xmCloudContext, appContext?.url) || '';
+    const mediaOrigin = getHostMediaOrigin(xmCloudContext?.host) || getHostMediaOrigin(xmCloudContext) || '';
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
