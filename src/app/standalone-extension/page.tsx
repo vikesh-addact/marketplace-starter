@@ -99,66 +99,6 @@ async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext,
     }
 }
 
-function getHostMediaOrigin(hostState?: HostStateContext) {
-    const hostUrl = hostState?.xmCloudTenantInfo?.url;
-
-    if (!hostUrl) {
-        return '';
-    }
-
-    try {
-        return new URL(hostUrl).origin;
-    } catch {
-        return hostUrl.replace(/\/$/, '');
-    }
-}
-
-function safeText(value: unknown): string {
-    return typeof value === 'string' ? value : '';
-}
-
-function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = '') {
-    if (!url) {
-        return '';
-    }
-
-    if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
-        return url;
-    }
-
-    const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
-
-    if (url.startsWith('/')) {
-        return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
-    }
-
-    const baseUrl = appContext?.url?.replace(/\/$/, '');
-    return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
-}
-
-function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
-    const mediaLibraryMarker = '/sitecore/media library/';
-    const markerIndex = path.toLowerCase().indexOf(mediaLibraryMarker);
-
-    if (markerIndex === -1) {
-        return '';
-    }
-
-    const relativePath = path
-        .slice(markerIndex + mediaLibraryMarker.length)
-        .split('/')
-        .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
-        .join('/');
-    const normalizedExtension = extension.replace('.', '').toLowerCase();
-    const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
-
-    if (!origin) {
-        return '';
-    }
-
-    return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
-}
-
 function getMediaIssues(item: MediaItem): MediaIssue[] {
     const issues: MediaIssue[] = [];
     const ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
@@ -216,7 +156,7 @@ function formatSize(sizeKb: number) {
 }
 
 function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext, mediaOriginOverride = ''): MediaItem[] {
-    const result = payload as {
+    const data = payload as {
         data?: {
             search?: {
                 results?: Array<{
@@ -255,24 +195,230 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         };
     };
 
-    const searchData = result.data?.data?.search ?? result.data?.search;
-    const results = searchData?.results ?? [];
+    type XmCloudAppContext = ApplicationContext & {
+        xmCloudTenantInfo?: {
+            url?: string;
+        };
+        host?: {
+            xmCloudTenantInfo?: {
+                url?: string;
+            };
+        };
+    };
+
+    function getHostMediaOrigin(hostState?: HostStateContext) {
+        const hostUrl = hostState?.xmCloudTenantInfo?.url;
+
+        if (!hostUrl) {
+            return '';
+        }
+
+        try {
+            return new URL(hostUrl).origin;
+        } catch {
+            return hostUrl.replace(/\/$/, '');
+        }
+    }
+
+    function resolveOrigin(url?: string) {
+        if (!url) {
+            return '';
+        }
+
+        try {
+            return new URL(url).origin;
+        } catch {
+            return url.replace(/\/$/, '');
+        }
+    }
+
+    function toMediaUrl(url?: string, mediaOrigin = '', appContext?: ApplicationContext) {
+        if (!url) {
+            return '';
+        }
+
+        if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
+            return url;
+        }
+
+        const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
+        const origin = mediaOrigin || resolveOrigin(appContext?.url);
+
+        if (url.startsWith('/')) {
+            return origin ? `${origin}${normalizedUrl}` : normalizedUrl;
+        }
+
+        const baseUrl = appContext?.url?.replace(/\/$/, '');
+        return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
+    }
+
+    function getRelativeMediaLibraryPath(pathOrUrl: string): string {
+        const cleanPath = pathOrUrl.replace(/\\/g, '/');
+        const mediaLibraryIndex = cleanPath.toLowerCase().indexOf('/media library/');
+        if (mediaLibraryIndex !== -1) {
+            return cleanPath.slice(mediaLibraryIndex + '/media library/'.length);
+        }
+        const mediaLibraryHyphenIndex = cleanPath.toLowerCase().indexOf('/media-library/');
+        if (mediaLibraryHyphenIndex !== -1) {
+            return cleanPath.slice(mediaLibraryHyphenIndex + '/media-library/'.length);
+        }
+        return '';
+    }
+
+    function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
+        const relativePath = getRelativeMediaLibraryPath(path);
+        if (!relativePath) {
+            return '';
+        }
+
+        const formattedRelativePath = relativePath
+            .split('/')
+            .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
+            .join('/');
+
+        const normalizedExtension = extension.replace('.', '').toLowerCase();
+        const extensionSuffix = normalizedExtension && normalizedExtension !== 'unknown' ? `.${normalizedExtension}` : '';
+
+        if (!origin) {
+            return '';
+        }
+
+        return `${origin}/-/jssmedia/${formattedRelativePath}${extensionSuffix}`;
+    }
+
+    function extractMediaLibraryPath(url: string, extension: string, origin: string): string {
+        // Extract the media library segment from URLs like /nb-NO/sitecore/shell/sitecore/media-library/Project/...
+        // Or /sitecore/shell/sitecore/media-library/Project/...
+        const mediaLibraryMatch = url.match(/\/sitecore\/(?:shell\/)?sitecore\/media-library\/(.+?)$/i);
+        if (!mediaLibraryMatch || !origin) {
+            return '';
+        }
+
+        const mediaPath = mediaLibraryMatch[1];
+        const segments = mediaPath
+            .split('/')
+            .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
+            .join('/');
+        const normalizedExtension = extension.replace('.', '').toLowerCase();
+        const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
+
+        return `${origin}/-/jssmedia/${segments}${extensionSuffix}`;
+    }
+
+    function isSitecoreMediaLibraryUrl(url?: string) {
+        if (!url) return false;
+        // Match both relative paths and absolute URLs that contain the sitecore media-library path
+        return /\/sitecore\/(shell\/)?sitecore\/media-library\//i.test(url);
+    }
+
+    function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
+        const resolvedOrigin = origin || resolveOrigin(appContext?.url);
+
+        // If the url contains the sitecore media-library path, convert it to jssmedia URL
+        if (isSitecoreMediaLibraryUrl(url)) {
+            // Try to extract from the full URL first (has priority)
+            if (resolvedOrigin) {
+                const mediaUrl = extractMediaLibraryPath(url ?? '', extension, resolvedOrigin);
+                if (mediaUrl) {
+                    return mediaUrl;
+                }
+            }
+            // Fallback to path-based conversion if we have a normalized path
+            if (path) {
+                const mediaUrl = mediaPathToUrlWithOrigin(path, extension, resolvedOrigin);
+                if (mediaUrl) {
+                    return mediaUrl;
+                }
+            }
+        }
+
+        // If the url is absolute but does NOT contain media-library, return as-is
+        if (url && /^https?:\/\//i.test(url) && !isSitecoreMediaLibraryUrl(url)) {
+            return url;
+        }
+
+        const normalizedUrl = toMediaUrl(url, resolvedOrigin, appContext);
+
+        if (normalizedUrl && !isSitecoreMediaLibraryUrl(normalizedUrl)) {
+            return normalizedUrl;
+        }
+
+        if (path) {
+            return mediaPathToUrlWithOrigin(path, extension, resolvedOrigin) || normalizedUrl;
+        }
+
+        return normalizedUrl;
+    }
+
+    const xmCloudContext = appContext as XmCloudAppContext | undefined;
+
+    const getMediaOriginFromResources = (appCtx?: ApplicationContext) => {
+        const resources = [...(appCtx?.resourceAccess ?? []), ...(appCtx?.resources ?? [])];
+        for (const res of resources) {
+            const url = res?.endpoint ?? res?.url;
+            if (url && /^https?:\/\//i.test(url)) {
+                try {
+                    const origin = new URL(url).origin;
+                    if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
+                        return origin;
+                    }
+                } catch {
+                    // ignore
+                }
+            }
+        }
+        return '';
+    };
+
+    const getMediaOriginFromContext = (appCtx?: ApplicationContext) => {
+        const resourceOrigin = getMediaOriginFromResources(appCtx);
+        if (resourceOrigin) {
+            return resourceOrigin;
+        }
+
+        const contextId = getSitecoreContextId(appCtx);
+        if (!contextId) {
+            return '';
+        }
+        if (/^https?:\/\//i.test(contextId)) {
+            try {
+                return new URL(contextId).origin;
+            } catch {
+                return contextId.replace(/\/$/, '');
+            }
+        }
+        if (contextId.includes('.')) {
+            return `https://${contextId}`;
+        }
+        return '';
+    };
+
+    const getAppContextUrlOrigin = (appCtx?: ApplicationContext) => {
+        if (!appCtx?.url) {
+            return '';
+        }
+        return resolveOrigin(appCtx.url);
+    };
+
+    const mediaOrigin =
+        mediaOriginOverride ||
+        getHostMediaOrigin(xmCloudContext?.host) ||
+        getHostMediaOrigin(xmCloudContext) ||
+        getMediaOriginFromContext(appContext) ||
+        getAppContextUrlOrigin(appContext) ||
+        '';
+
+    const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
     return results
         .map((result, index) => {
             const inner = result.innerItem;
             const ext = inner?.extension?.value?.replace('.', '').toLowerCase() ?? 'unknown';
 
-            const thumbnailUrl = toMediaUrl(
-                inner?.url || mediaPathToUrlWithOrigin(result.path ?? '', ext, mediaOriginOverride),
-                appContext,
-                mediaOriginOverride,
-            );
-
             return {
                 id: result.itemId ?? `media-${index}`,
                 name: result.name ?? `Media ${index + 1}`,
-                thumbnailUrl,
+                thumbnailUrl: getMediaThumbnailUrl(ext, inner?.url, result.path, mediaOrigin, appContext),
                 width: Number(inner?.width?.value) || 0,
                 height: Number(inner?.height?.value) || 0,
                 sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
@@ -329,7 +475,6 @@ function ActionButton({ label, state, onClick, disabled = false }: { label: stri
 function StandaloneExtension() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const [appContext, setAppContext] = useState<ApplicationContext>();
-    const [hostState, setHostState] = useState<HostStateContext>();
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
     const [mediaLoadMessage, setMediaLoadMessage] = useState('');
@@ -363,17 +508,69 @@ function StandaloneExtension() {
 
             let hostOrigin = '';
 
-            try {
-                const hostResult = await client.query('host.state');
-                console.log('Success retrieving host.state:', hostResult.data);
-                const hState = hostResult.data as HostStateContext;
-                setHostState(hState);
-                hostOrigin = getHostMediaOrigin(hState);
-            } catch (hostError) {
-                console.error('Error retrieving host.state:', hostError);
-            }
+            if (loadedAppContext) {
+                // Try to get XM Cloud host origin from the resource access/resources endpoints first
+                // Prioritize sitecorecloud.io URLs
+                const resources = [...(loadedAppContext?.resourceAccess ?? []), ...(loadedAppContext?.resources ?? [])];
 
-            console.log('[MediaOptimizer] Resolved hostOrigin:', hostOrigin || '(none — media URLs may not load correctly)');
+                // First pass: look for sitecorecloud.io URLs
+                for (const res of resources) {
+                    const url = res?.endpoint ?? res?.url;
+                    if (url && /^https?:\/\//i.test(url) && url.includes('sitecorecloud.io')) {
+                        try {
+                            hostOrigin = new URL(url).origin;
+                            break;
+                        } catch {
+                            // ignore
+                        }
+                    }
+                }
+
+                // Second pass: look for any non-localhost, non-vercel URL
+                if (!hostOrigin) {
+                    for (const res of resources) {
+                        const url = res?.endpoint ?? res?.url;
+                        if (url && /^https?:\/\//i.test(url)) {
+                            try {
+                                const origin = new URL(url).origin;
+                                if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
+                                    hostOrigin = origin;
+                                    break;
+                                }
+                            } catch {
+                                // ignore
+                            }
+                        }
+                    }
+                }
+
+                // Third pass: fall back to appContext.url origin if it looks like an XM Cloud URL
+                if (!hostOrigin && loadedAppContext.url) {
+                    try {
+                        const contextOrigin = new URL(loadedAppContext.url).origin;
+                        if (contextOrigin && !contextOrigin.includes('localhost') && !contextOrigin.includes('vercel.app')) {
+                            hostOrigin = contextOrigin;
+                        }
+                    } catch {
+                        // ignore
+                    }
+                }
+
+                // Final fallback: try contextId if it looks like a hostname
+                if (!hostOrigin) {
+                    const contextId = getSitecoreContextId(loadedAppContext);
+                    if (contextId && contextId.includes('.') && !contextId.includes('localhost') && !contextId.includes('vercel.app')) {
+                        hostOrigin = contextId.startsWith('http') ? contextId : `https://${contextId}`;
+                        try {
+                            hostOrigin = new URL(hostOrigin).origin;
+                        } catch {
+                            hostOrigin = '';
+                        }
+                    }
+                }
+
+                console.log('[MediaOptimizer] Resolved hostOrigin:', hostOrigin || '(none — media URLs may not load correctly)');
+            }
 
             try {
                 setIsLoadingMedia(true);
