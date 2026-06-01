@@ -254,34 +254,38 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
     }
 
-    function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
-        let normalizedPath = path;
-
-        const mediaLibraryMarker = '/sitecore/media library/';
-        if (!normalizedPath.toLowerCase().includes(mediaLibraryMarker)) {
-            normalizedPath = normalizedPath.replace(/\/sitecore\/shell\/sitecore\/media-library\//i, '/sitecore/media library/');
-            normalizedPath = normalizedPath.replace(/\/sitecore\/media-library\//i, '/sitecore/media library/');
+    function getRelativeMediaLibraryPath(pathOrUrl: string): string {
+        const cleanPath = pathOrUrl.replace(/\\/g, '/');
+        const mediaLibraryIndex = cleanPath.toLowerCase().indexOf('/media library/');
+        if (mediaLibraryIndex !== -1) {
+            return cleanPath.slice(mediaLibraryIndex + '/media library/'.length);
         }
+        const mediaLibraryHyphenIndex = cleanPath.toLowerCase().indexOf('/media-library/');
+        if (mediaLibraryHyphenIndex !== -1) {
+            return cleanPath.slice(mediaLibraryHyphenIndex + '/media-library/'.length);
+        }
+        return '';
+    }
 
-        const markerIndex = normalizedPath.toLowerCase().indexOf(mediaLibraryMarker);
-
-        if (markerIndex === -1) {
+    function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
+        const relativePath = getRelativeMediaLibraryPath(path);
+        if (!relativePath) {
             return '';
         }
 
-        const relativePath = normalizedPath
-            .slice(markerIndex + mediaLibraryMarker.length)
+        const formattedRelativePath = relativePath
             .split('/')
             .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
             .join('/');
+            
         const normalizedExtension = extension.replace('.', '').toLowerCase();
-        const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
+        const extensionSuffix = normalizedExtension && normalizedExtension !== 'unknown' ? `.${normalizedExtension}` : '';
 
         if (!origin) {
             return '';
         }
 
-        return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
+        return `${origin}/-/jssmedia/${formattedRelativePath}${extensionSuffix}`;
     }
 
     function isSitecoreMediaLibraryUrl(url?: string) {
@@ -313,7 +317,30 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
 
     const xmCloudContext = appContext as XmCloudAppContext | undefined;
 
+    const getMediaOriginFromResources = (appCtx?: ApplicationContext) => {
+        const resources = [...(appCtx?.resourceAccess ?? []), ...(appCtx?.resources ?? [])];
+        for (const res of resources) {
+            const url = res?.endpoint ?? res?.url;
+            if (url && /^https?:\/\//i.test(url)) {
+                try {
+                    const origin = new URL(url).origin;
+                    if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
+                        return origin;
+                    }
+                } catch {
+                    // ignore
+                }
+            }
+        }
+        return '';
+    };
+
     const getMediaOriginFromContext = (appCtx?: ApplicationContext) => {
+        const resourceOrigin = getMediaOriginFromResources(appCtx);
+        if (resourceOrigin) {
+            return resourceOrigin;
+        }
+
         const contextId = getSitecoreContextId(appCtx);
         if (!contextId) {
             return '';
@@ -438,13 +465,33 @@ function StandaloneExtension() {
             let hostOrigin = '';
 
             if (loadedAppContext) {
-                const contextId = getSitecoreContextId(loadedAppContext);
-                if (contextId) {
-                    hostOrigin = contextId.startsWith('http') ? contextId : `https://${contextId}`;
-                    try {
-                        hostOrigin = new URL(hostOrigin).origin;
-                    } catch {
-                        // ignore
+                // Try to get XM Cloud host origin from the resource access/resources endpoints first
+                const resources = [...(loadedAppContext?.resourceAccess ?? []), ...(loadedAppContext?.resources ?? [])];
+                for (const res of resources) {
+                    const url = res?.endpoint ?? res?.url;
+                    if (url && /^https?:\/\//i.test(url)) {
+                        try {
+                            const origin = new URL(url).origin;
+                            if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
+                                hostOrigin = origin;
+                                break;
+                            }
+                        } catch {
+                            // ignore
+                        }
+                    }
+                }
+
+                // If not found in endpoints, fall back to the contextId
+                if (!hostOrigin) {
+                    const contextId = getSitecoreContextId(loadedAppContext);
+                    if (contextId) {
+                        hostOrigin = contextId.startsWith('http') ? contextId : `https://${contextId}`;
+                        try {
+                            hostOrigin = new URL(hostOrigin).origin;
+                        } catch {
+                            // ignore
+                        }
                     }
                 }
             }
