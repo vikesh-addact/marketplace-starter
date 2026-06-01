@@ -510,32 +510,61 @@ function StandaloneExtension() {
 
             if (loadedAppContext) {
                 // Try to get XM Cloud host origin from the resource access/resources endpoints first
+                // Prioritize sitecorecloud.io URLs
                 const resources = [...(loadedAppContext?.resourceAccess ?? []), ...(loadedAppContext?.resources ?? [])];
+
+                // First pass: look for sitecorecloud.io URLs
                 for (const res of resources) {
                     const url = res?.endpoint ?? res?.url;
-                    if (url && /^https?:\/\//i.test(url)) {
+                    if (url && /^https?:\/\//i.test(url) && url.includes('sitecorecloud.io')) {
                         try {
-                            const origin = new URL(url).origin;
-                            if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
-                                hostOrigin = origin;
-                                break;
-                            }
+                            hostOrigin = new URL(url).origin;
+                            break;
                         } catch {
                             // ignore
                         }
                     }
                 }
 
-                // If not found in endpoints, fall back to the contextId only if it
-                // looks like a real hostname (contains a dot) — not a plain resource ID.
+                // Second pass: look for any non-localhost, non-vercel URL
+                if (!hostOrigin) {
+                    for (const res of resources) {
+                        const url = res?.endpoint ?? res?.url;
+                        if (url && /^https?:\/\//i.test(url)) {
+                            try {
+                                const origin = new URL(url).origin;
+                                if (origin && !origin.includes('localhost') && !origin.includes('vercel.app')) {
+                                    hostOrigin = origin;
+                                    break;
+                                }
+                            } catch {
+                                // ignore
+                            }
+                        }
+                    }
+                }
+
+                // Third pass: fall back to appContext.url origin if it looks like an XM Cloud URL
+                if (!hostOrigin && loadedAppContext.url) {
+                    try {
+                        const contextOrigin = new URL(loadedAppContext.url).origin;
+                        if (contextOrigin && !contextOrigin.includes('localhost') && !contextOrigin.includes('vercel.app')) {
+                            hostOrigin = contextOrigin;
+                        }
+                    } catch {
+                        // ignore
+                    }
+                }
+
+                // Final fallback: try contextId if it looks like a hostname
                 if (!hostOrigin) {
                     const contextId = getSitecoreContextId(loadedAppContext);
-                    if (contextId && contextId.includes('.')) {
+                    if (contextId && contextId.includes('.') && !contextId.includes('localhost') && !contextId.includes('vercel.app')) {
                         hostOrigin = contextId.startsWith('http') ? contextId : `https://${contextId}`;
                         try {
                             hostOrigin = new URL(hostOrigin).origin;
                         } catch {
-                            // ignore
+                            hostOrigin = '';
                         }
                     }
                 }
