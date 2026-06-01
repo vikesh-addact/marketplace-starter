@@ -234,6 +234,18 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         }
     }
 
+    function resolveOrigin(url?: string) {
+        if (!url) {
+            return '';
+        }
+
+        try {
+            return new URL(url).origin;
+        } catch {
+            return url.replace(/\/$/, '');
+        }
+    }
+
     function toMediaUrl(url?: string, mediaOrigin = '', appContext?: ApplicationContext) {
         if (!url) {
             return '';
@@ -244,9 +256,10 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         }
 
         const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
+        const origin = mediaOrigin || resolveOrigin(appContext?.url);
 
         if (url.startsWith('/')) {
-            return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
+            return origin ? `${origin}${normalizedUrl}` : normalizedUrl;
         }
 
         const baseUrl = appContext?.url?.replace(/\/$/, '');
@@ -288,21 +301,23 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
     }
 
     function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
+        const resolvedOrigin = origin || resolveOrigin(appContext?.url);
+
         if (isSitecoreMediaLibraryUrl(url)) {
-            const mediaUrl = mediaPathToUrlWithOrigin(path ?? url ?? '', extension, origin);
+            const mediaUrl = mediaPathToUrlWithOrigin(path ?? url ?? '', extension, resolvedOrigin);
             if (mediaUrl) {
                 return mediaUrl;
             }
         }
 
-        const normalizedUrl = toMediaUrl(url, origin, appContext);
+        const normalizedUrl = toMediaUrl(url, resolvedOrigin, appContext);
 
         if (normalizedUrl && !isSitecoreMediaLibraryUrl(normalizedUrl)) {
             return normalizedUrl;
         }
 
         if (path) {
-            return mediaPathToUrlWithOrigin(path, extension, origin) || normalizedUrl;
+            return mediaPathToUrlWithOrigin(path, extension, resolvedOrigin) || normalizedUrl;
         }
 
         return normalizedUrl;
