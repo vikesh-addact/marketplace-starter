@@ -27,6 +27,7 @@ interface HostStateContext {
 }
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
+const defaultMediaHostOrigin = 'https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io';
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
@@ -569,7 +570,17 @@ function StandaloneExtension() {
                     }
                 }
 
-                console.log('[MediaOptimizer] Resolved hostOrigin:', hostOrigin || '(none — media URLs may not load correctly)');
+                if (!hostOrigin) {
+                    hostOrigin = defaultMediaHostOrigin;
+                }
+
+                console.log('[MediaOptimizer] Media host resolution details:', {
+                    hostOrigin,
+                    defaultMediaHostOrigin,
+                    sitecoreContextId: getSitecoreContextId(loadedAppContext),
+                    appContext: loadedAppContext,
+                    resources: [...(loadedAppContext?.resourceAccess ?? []), ...(loadedAppContext?.resources ?? [])],
+                });
             }
 
             try {
