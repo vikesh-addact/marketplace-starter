@@ -113,6 +113,47 @@ function getHostMediaOrigin(hostState?: HostStateContext) {
     }
 }
 
+function getResolvedMediaOrigin(appContext?: ApplicationContext, hostState?: HostStateContext) {
+    // 1. Try host.state (matches PagesContextPanel logic)
+    const hostOrigin = getHostMediaOrigin(hostState);
+    if (hostOrigin) {
+        return hostOrigin;
+    }
+
+    if (!appContext) {
+        return '';
+    }
+
+    // 2. Try to extract from Authoring API or other sitecorecloud.io resources
+    const resources = [...(appContext.resourceAccess ?? []), ...(appContext.resources ?? [])];
+    for (const res of resources) {
+        const url = res?.endpoint ?? res?.url;
+        if (url && /^https?:\/\//i.test(url) && url.includes('sitecorecloud.io')) {
+            try {
+                const origin = new URL(url).origin;
+                if (origin) {
+                    return origin;
+                }
+            } catch {
+                // ignore
+            }
+        }
+    }
+
+    // 3. Try Sitecore Context ID as a fallback hostname
+    const contextId = getSitecoreContextId(appContext);
+    if (contextId && contextId.includes('.') && !contextId.includes('localhost') && !contextId.includes('vercel.app')) {
+        const url = contextId.startsWith('http') ? contextId : `https://${contextId}`;
+        try {
+            return new URL(url).origin;
+        } catch {
+            // ignore
+        }
+    }
+
+    return '';
+}
+
 function safeText(value: unknown): string {
     return typeof value === 'string' ? value : '';
 }
@@ -329,7 +370,6 @@ function ActionButton({ label, state, onClick, disabled = false }: { label: stri
 function StandaloneExtension() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const [appContext, setAppContext] = useState<ApplicationContext>();
-    const [hostState, setHostState] = useState<HostStateContext>();
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
     const [mediaLoadMessage, setMediaLoadMessage] = useState('');
@@ -367,10 +407,10 @@ function StandaloneExtension() {
                 const hostResult = await client.query('host.state');
                 console.log('Success retrieving host.state:', hostResult.data);
                 const hState = hostResult.data as HostStateContext;
-                setHostState(hState);
-                hostOrigin = getHostMediaOrigin(hState);
+                hostOrigin = getResolvedMediaOrigin(loadedAppContext, hState);
             } catch (hostError) {
                 console.error('Error retrieving host.state:', hostError);
+                hostOrigin = getResolvedMediaOrigin(loadedAppContext);
             }
 
             console.log('[MediaOptimizer] Resolved hostOrigin:', hostOrigin || '(none — media URLs may not load correctly)');
