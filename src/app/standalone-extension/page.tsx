@@ -205,8 +205,8 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
         };
     };
 
-    function getHostMediaOrigin(hostState?: HostStateContext) {
-        const hostUrl = hostState?.xmCloudTenantInfo?.url;
+    function getHostMediaOrigin(hostState?: HostStateContext, fallbackUrl?: string) {
+        const hostUrl = hostState?.xmCloudTenantInfo?.url ?? fallbackUrl;
 
         if (!hostUrl) {
             return '';
@@ -238,9 +238,57 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
         return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
     }
 
+    function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
+        let normalizedPath = path;
+
+        const mediaLibraryMarker = '/sitecore/media library/';
+        if (!normalizedPath.toLowerCase().includes(mediaLibraryMarker)) {
+            normalizedPath = normalizedPath.replace(/\/sitecore\/shell\/sitecore\/media-library\//i, '/sitecore/media library/');
+            normalizedPath = normalizedPath.replace(/\/sitecore\/media-library\//i, '/sitecore/media library/');
+        }
+
+        const markerIndex = normalizedPath.toLowerCase().indexOf(mediaLibraryMarker);
+
+        if (markerIndex === -1) {
+            return '';
+        }
+
+        const relativePath = normalizedPath
+            .slice(markerIndex + mediaLibraryMarker.length)
+            .split('/')
+            .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
+            .join('/');
+        const normalizedExtension = extension.replace('.', '').toLowerCase();
+        const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
+
+        if (!origin) {
+            return '';
+        }
+
+        return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
+    }
+
+    function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
+        const normalizedUrl = toMediaUrl(url, origin, appContext);
+
+        if (normalizedUrl && /\/sitecore\/(shell\/)?sitecore\/media-library\//i.test(normalizedUrl)) {
+            return mediaPathToUrlWithOrigin(path ?? normalizedUrl, extension, origin) || normalizedUrl;
+        }
+
+        if (normalizedUrl) {
+            return normalizedUrl;
+        }
+
+        if (path) {
+            return mediaPathToUrlWithOrigin(path, extension, origin);
+        }
+
+        return '';
+    }
+
     const xmCloudContext = appContext as XmCloudAppContext | undefined;
 
-    const mediaOrigin = getHostMediaOrigin(xmCloudContext?.host) || getHostMediaOrigin(xmCloudContext) || '';
+    const mediaOrigin = getHostMediaOrigin(xmCloudContext?.host, appContext?.url) || getHostMediaOrigin(xmCloudContext, appContext?.url) || '';
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
@@ -252,7 +300,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
             return {
                 id: result.itemId ?? `media-${index}`,
                 name: result.name ?? `Media ${index + 1}`,
-                thumbnailUrl: toMediaUrl(inner?.url, mediaOrigin),
+                thumbnailUrl: getMediaThumbnailUrl(ext, inner?.url, result.path, mediaOrigin, appContext),
                 width: Number(inner?.width?.value) || 0,
                 height: Number(inner?.height?.value) || 0,
                 sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
