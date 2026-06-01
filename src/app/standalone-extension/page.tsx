@@ -219,24 +219,46 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
         }
     }
 
-    function toMediaUrl(url?: string, mediaOrigin = ''): string {
+    function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = '') {
         if (!url) {
             return '';
         }
 
         if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
-            return url.replace('/-/media/', '/-/jssmedia/');
+            return url;
         }
 
-        let normalizedUrl = url.replace(/\/en\/sitecore\/shell\/sitecore\/media-library/i, '/-/jssmedia');
+        const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
 
-        normalizedUrl = normalizedUrl.replace('/-/media/', '/-/jssmedia/');
-
-        if (normalizedUrl.startsWith('/')) {
+        if (url.startsWith('/')) {
             return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
         }
 
-        return mediaOrigin ? `${mediaOrigin}/${normalizedUrl}` : normalizedUrl;
+        const baseUrl = appContext?.url?.replace(/\/$/, '');
+        return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
+    }
+
+    function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
+        const mediaLibraryMarker = '/sitecore/media library/';
+        const markerIndex = path.toLowerCase().indexOf(mediaLibraryMarker);
+
+        if (markerIndex === -1) {
+            return '';
+        }
+
+        const relativePath = path
+            .slice(markerIndex + mediaLibraryMarker.length)
+            .split('/')
+            .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
+            .join('/');
+        const normalizedExtension = extension.replace('.', '').toLowerCase();
+        const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
+
+        if (!origin) {
+            return '';
+        }
+
+        return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
     }
 
     const xmCloudContext = appContext as XmCloudAppContext | undefined;
@@ -301,7 +323,7 @@ function ScoreBadge({ score }: { score: number }) {
 
 function ActionButton({ label, state, onClick, disabled = false }: { label: string; state: ActionState; onClick: () => void; disabled?: boolean }) {
     return (
-        <button disabled={disabled || state === 'working'} onClick={onClick} style={styles.actionButton} type="button">
+        <button disabled={disabled || state === 'working'} onClick={onClick} style={disabled ? styles.disabledActionButton : styles.actionButton} type="button">
             {state === 'working' ? 'Working...' : state === 'done' ? 'Done' : state === 'failed' ? 'Failed' : label}
         </button>
     );
@@ -842,6 +864,18 @@ const styles: Record<string, CSSProperties> = {
         borderRadius: '8px',
         color: '#ffffff',
         cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: 600,
+        padding: '8px 12px',
+        width: '100%',
+        minHeight: '36px',
+    },
+    disabledActionButton: {
+        background: '#e2e8f0',
+        border: '1px solid #cbd5e1',
+        borderRadius: '8px',
+        color: '#64748b',
+        cursor: 'not-allowed',
         fontSize: '12px',
         fontWeight: 600,
         padding: '8px 12px',
