@@ -419,7 +419,7 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            let hostOrigin = defaultMediaHostOrigin;
+            const hostOrigin = defaultMediaHostOrigin;
 
             try {
                 setIsLoadingMedia(true);
