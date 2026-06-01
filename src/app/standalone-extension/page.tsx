@@ -26,8 +26,6 @@ interface HostStateContext {
     };
 }
 
-
-
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
@@ -277,7 +275,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
             .split('/')
             .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
             .join('/');
-            
+
         const normalizedExtension = extension.replace('.', '').toLowerCase();
         const extensionSuffix = normalizedExtension && normalizedExtension !== 'unknown' ? `.${normalizedExtension}` : '';
 
@@ -288,36 +286,53 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         return `${origin}/-/jssmedia/${formattedRelativePath}${extensionSuffix}`;
     }
 
+    function extractMediaLibraryPath(url: string, extension: string, origin: string): string {
+        // Extract the media library segment from URLs like /nb-NO/sitecore/shell/sitecore/media-library/Project/...
+        // Or /sitecore/shell/sitecore/media-library/Project/...
+        const mediaLibraryMatch = url.match(/\/sitecore\/(?:shell\/)?sitecore\/media-library\/(.+?)$/i);
+        if (!mediaLibraryMatch || !origin) {
+            return '';
+        }
+
+        const mediaPath = mediaLibraryMatch[1];
+        const segments = mediaPath
+            .split('/')
+            .map((segment) => encodeURIComponent(segment.replace(/\s+/g, '-')))
+            .join('/');
+        const normalizedExtension = extension.replace('.', '').toLowerCase();
+        const extensionSuffix = normalizedExtension ? `.${normalizedExtension}` : '';
+
+        return `${origin}/-/jssmedia/${segments}${extensionSuffix}`;
+    }
+
     function isSitecoreMediaLibraryUrl(url?: string) {
         if (!url) return false;
         // Match both relative paths and absolute URLs that contain the sitecore media-library path
         return /\/sitecore\/(shell\/)?sitecore\/media-library\//i.test(url);
     }
 
-    function stripOriginFromAbsoluteUrl(url: string): string {
-        try {
-            const parsed = new URL(url);
-            return parsed.pathname + parsed.search;
-        } catch {
-            return url;
-        }
-    }
-
     function getMediaThumbnailUrl(extension: string, url?: string, path?: string, origin = '', appContext?: ApplicationContext) {
         const resolvedOrigin = origin || resolveOrigin(appContext?.url);
 
-        // If the url (relative or absolute) contains the sitecore media-library path, 
-        // convert it to a proper jssmedia URL using the item path (most reliable) or the url itself.
+        // If the url contains the sitecore media-library path, convert it to jssmedia URL
         if (isSitecoreMediaLibraryUrl(url)) {
-            // Prefer item path from GraphQL (e.g. /sitecore/media library/Project/...)
-            const sourcePath = path ?? stripOriginFromAbsoluteUrl(url ?? '');
-            const mediaUrl = mediaPathToUrlWithOrigin(sourcePath, extension, resolvedOrigin);
-            if (mediaUrl) {
-                return mediaUrl;
+            // Try to extract from the full URL first (has priority)
+            if (resolvedOrigin) {
+                const mediaUrl = extractMediaLibraryPath(url ?? '', extension, resolvedOrigin);
+                if (mediaUrl) {
+                    return mediaUrl;
+                }
+            }
+            // Fallback to path-based conversion if we have a normalized path
+            if (path) {
+                const mediaUrl = mediaPathToUrlWithOrigin(path, extension, resolvedOrigin);
+                if (mediaUrl) {
+                    return mediaUrl;
+                }
             }
         }
 
-        // If the url is absolute but does NOT contain media-library, return as-is.
+        // If the url is absolute but does NOT contain media-library, return as-is
         if (url && /^https?:\/\//i.test(url) && !isSitecoreMediaLibraryUrl(url)) {
             return url;
         }
@@ -378,11 +393,20 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         return '';
     };
 
-    const mediaOrigin = mediaOriginOverride 
-        || getHostMediaOrigin(xmCloudContext?.host) 
-        || getHostMediaOrigin(xmCloudContext) 
-        || getMediaOriginFromContext(appContext)
-        || '';
+    const getAppContextUrlOrigin = (appCtx?: ApplicationContext) => {
+        if (!appCtx?.url) {
+            return '';
+        }
+        return resolveOrigin(appCtx.url);
+    };
+
+    const mediaOrigin =
+        mediaOriginOverride ||
+        getHostMediaOrigin(xmCloudContext?.host) ||
+        getHostMediaOrigin(xmCloudContext) ||
+        getMediaOriginFromContext(appContext) ||
+        getAppContextUrlOrigin(appContext) ||
+        '';
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
