@@ -26,19 +26,7 @@ interface HostStateContext {
     };
 }
 
-function resolveHostMediaOrigin(hostState?: HostStateContext) {
-    const hostUrl = hostState?.xmCloudTenantInfo?.url;
 
-    if (!hostUrl) {
-        return '';
-    }
-
-    try {
-        return new URL(hostUrl).origin;
-    } catch {
-        return hostUrl.replace(/\/$/, '');
-    }
-}
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 
@@ -325,7 +313,29 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
 
     const xmCloudContext = appContext as XmCloudAppContext | undefined;
 
-    const mediaOrigin = mediaOriginOverride || getHostMediaOrigin(xmCloudContext?.host) || getHostMediaOrigin(xmCloudContext) || '';
+    const getMediaOriginFromContext = (appCtx?: ApplicationContext) => {
+        const contextId = getSitecoreContextId(appCtx);
+        if (!contextId) {
+            return '';
+        }
+        if (/^https?:\/\//i.test(contextId)) {
+            try {
+                return new URL(contextId).origin;
+            } catch {
+                return contextId.replace(/\/$/, '');
+            }
+        }
+        if (contextId.includes('.')) {
+            return `https://${contextId}`;
+        }
+        return '';
+    };
+
+    const mediaOrigin = mediaOriginOverride 
+        || getHostMediaOrigin(xmCloudContext?.host) 
+        || getHostMediaOrigin(xmCloudContext) 
+        || getMediaOriginFromContext(appContext)
+        || '';
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
@@ -427,11 +437,16 @@ function StandaloneExtension() {
 
             let hostOrigin = '';
 
-            try {
-                const hostResult = await client.query('host.state');
-                hostOrigin = resolveHostMediaOrigin(hostResult.data as HostStateContext);
-            } catch (hostError) {
-                console.warn('host.state could not be loaded:', hostError);
+            if (loadedAppContext) {
+                const contextId = getSitecoreContextId(loadedAppContext);
+                if (contextId) {
+                    hostOrigin = contextId.startsWith('http') ? contextId : `https://${contextId}`;
+                    try {
+                        hostOrigin = new URL(hostOrigin).origin;
+                    } catch {
+                        // ignore
+                    }
+                }
             }
 
             try {
