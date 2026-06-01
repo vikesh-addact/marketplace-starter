@@ -25,6 +25,21 @@ interface HostStateContext {
         url?: string;
     };
 }
+
+function resolveHostMediaOrigin(hostState?: HostStateContext) {
+    const hostUrl = hostState?.xmCloudTenantInfo?.url;
+
+    if (!hostUrl) {
+        return '';
+    }
+
+    try {
+        return new URL(hostUrl).origin;
+    } catch {
+        return hostUrl.replace(/\/$/, '');
+    }
+}
+
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
@@ -154,7 +169,7 @@ function formatSize(sizeKb: number) {
     return sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
 }
 
-function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext): MediaItem[] {
+function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext, mediaOriginOverride = ''): MediaItem[] {
     const data = payload as {
         data?: {
             search?: {
@@ -295,7 +310,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext)
 
     const xmCloudContext = appContext as XmCloudAppContext | undefined;
 
-    const mediaOrigin = getHostMediaOrigin(xmCloudContext?.host) || getHostMediaOrigin(xmCloudContext) || '';
+    const mediaOrigin = mediaOriginOverride || getHostMediaOrigin(xmCloudContext?.host) || getHostMediaOrigin(xmCloudContext) || '';
 
     const results = data.data?.data?.search?.results ?? data.data?.search?.results ?? [];
 
@@ -395,6 +410,15 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
+            let hostOrigin = '';
+
+            try {
+                const hostResult = await client.query('host.state');
+                hostOrigin = resolveHostMediaOrigin(hostResult.data as HostStateContext);
+            } catch (hostError) {
+                console.warn('host.state could not be loaded:', hostError);
+            }
+
             try {
                 setIsLoadingMedia(true);
                 const mediaResult = await client.mutate('xmc.authoring.graphql', {
@@ -488,7 +512,7 @@ function StandaloneExtension() {
                 });
 
                 console.log('Media search result:', JSON.stringify(mediaResult, null, 2));
-                const items = mapGraphqlMediaItems(mediaResult, loadedAppContext);
+                const items = mapGraphqlMediaItems(mediaResult, loadedAppContext, hostOrigin);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
             } catch (mediaError) {
