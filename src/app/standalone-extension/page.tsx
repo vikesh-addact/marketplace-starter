@@ -43,6 +43,28 @@ function openContentEditor(item: MediaItem) {
     return editorUrl;
 }
 
+function getMediaOptimizationUrl(item: MediaItem) {
+    return item.thumbnailUrl || item.path || '';
+}
+
+async function triggerMediaOptimization(mediaUrl: string) {
+    if (!mediaUrl) {
+        throw new Error('Unable to locate a media URL for optimization.');
+    }
+
+    const response = await fetch(mediaUrl, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'reload',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Media request failed with status ${response.status}`);
+    }
+
+    return response;
+}
+
 async function canWriteToClipboard() {
     if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
         return false;
@@ -632,6 +654,18 @@ function StandaloneExtension() {
             return;
         }
 
+        if (action === 'optimize') {
+            try {
+                const mediaUrl = getMediaOptimizationUrl(item);
+                await triggerMediaOptimization(mediaUrl);
+                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+            } catch (actionError) {
+                console.error('Error requesting media optimization:', actionError);
+                setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
+            }
+            return;
+        }
+
         if (action === 'copyId') {
             try {
                 const clipboardAvailable = await canWriteToClipboard();
@@ -764,7 +798,6 @@ function StandaloneExtension() {
                                                     />
                                                     <ActionButton
                                                         label="Optimize"
-                                                        disabled
                                                         state={actionStates[`${item.id}-optimize`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'optimize')}
                                                     />

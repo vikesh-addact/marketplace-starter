@@ -57,6 +57,28 @@ function openContentEditor(item: PageMediaItem, origin: string) {
     return editorUrl;
 }
 
+function getMediaOptimizationUrl(item: PageMediaItem) {
+    return item.previewUrl;
+}
+
+async function triggerMediaOptimization(mediaUrl: string) {
+    if (!mediaUrl) {
+        throw new Error('Unable to locate a media URL for optimization.');
+    }
+
+    const response = await fetch(mediaUrl, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'reload',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Media request failed with status ${response.status}`);
+    }
+
+    return response;
+}
+
 function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     const issues: MediaIssue[] = [];
     const ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
@@ -931,8 +953,23 @@ function PagesContextPanel() {
             return;
         }
 
+        if (action === 'optimize') {
+            try {
+                await triggerMediaOptimization(getMediaOptimizationUrl(item));
+                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+                setActionMessage(
+                    `Requested optimization for ${item.name}. If Dianoga is configured on the Sitecore host, this warms the media cache and triggers optimization.`,
+                );
+            } catch (actionError) {
+                console.error('Error requesting media optimization:', actionError);
+                setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
+                setActionMessage(`Optimization request failed: ${actionError instanceof Error ? actionError.message : String(actionError)}`);
+            }
+            return;
+        }
+
         if (action !== 'alt') {
-            setActionMessage('Optimize, WebP, and ratio changes require a media upload/replacement API. ALT updates are persisted through Authoring GraphQL.');
+            setActionMessage('WebP and ratio changes require a media upload/replacement API. ALT updates are persisted through Authoring GraphQL.');
             return;
         }
 
