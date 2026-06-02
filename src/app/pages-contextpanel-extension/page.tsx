@@ -75,20 +75,11 @@ function getMediaIssues(item: PageMediaItem): MediaIssue[] {
 }
 
 async function optimizeAndReplaceMedia(client: ClientSDK, appContext: ApplicationContext, item: PageMediaItem) {
-    // 1. Fetch the image in the browser to handle authentication
-    const imageRes = await fetch(getMediaOptimizationUrl(item), { credentials: 'include' });
-    if (!imageRes.ok) {
-        throw new Error(`Failed to fetch source image: ${imageRes.status} ${imageRes.statusText}`);
-    }
-    const imageBlob = await imageRes.blob();
-
-    // 2. Optimize the image via our server proxy
-    const optimizeFormData = new FormData();
-    optimizeFormData.append('file', imageBlob, item.name);
-
+    // 1. Optimize the image via our server proxy
     const optimizeRes = await fetch('/api/optimize', {
         method: 'POST',
-        body: optimizeFormData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: getMediaOptimizationUrl(item) }),
     });
 
     if (!optimizeRes.ok) {
@@ -98,7 +89,7 @@ async function optimizeAndReplaceMedia(client: ClientSDK, appContext: Applicatio
 
     const optimizedBlob = await optimizeRes.blob();
 
-    // 3. Request a pre-signed upload URL from Sitecore Authoring GraphQL
+    // 2. Request a pre-signed upload URL from Sitecore Authoring GraphQL
     const uploadMutation = `
         mutation GetUploadUrl($itemPath: String!) {
             uploadMedia(input: {
@@ -140,13 +131,13 @@ async function optimizeAndReplaceMedia(client: ClientSDK, appContext: Applicatio
         throw new Error('Failed to retrieve a pre-signed upload URL from Sitecore.');
     }
 
-    // 4. Upload the optimized blob to the pre-signed URL
-    const uploadFormData = new FormData();
-    uploadFormData.append('file', optimizedBlob, `${item.name.split('.')[0]}.webp`);
+    // 3. Upload the optimized blob to the pre-signed URL
+    const formData = new FormData();
+    formData.append('file', optimizedBlob, `${item.name.split('.')[0]}.webp`);
 
     const uploadRes = await fetch(presignedUrl, {
         method: 'POST',
-        body: uploadFormData,
+        body: formData,
     });
 
     if (!uploadRes.ok) {

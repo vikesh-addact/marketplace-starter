@@ -3,19 +3,40 @@ import sharp from 'sharp';
 
 export async function POST(req: Request) {
     try {
-        const formData = await req.formData();
-        const file = formData.get('file') as File | null;
-
-        if (!file) {
-            return NextResponse.json({ error: 'Missing file in request' }, { status: 400 });
+        const body = (await req.json()) as unknown;
+        let url: string | undefined;
+        if (typeof body === 'object' && body !== null) {
+            const candidate = body as { url?: unknown };
+            if (typeof candidate.url === 'string') url = candidate.url;
         }
 
-        const buffer = await file.arrayBuffer();
+        if (!url || typeof url !== 'string') {
+            return NextResponse.json({ error: 'Missing url' }, { status: 400 });
+        }
+
+        // Restrict requests to a configured media origin to avoid open proxy abuse.
+        const allowedOrigin = process.env.SITECORE_MEDIA_ORIGIN || 'https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io';
+
+        let parsed: URL;
+        try {
+            parsed = new URL(url);
+        } catch {
+            return NextResponse.json({ error: 'Invalid url' }, { status: 400 });
+        }
+
+        if (!parsed.origin || !parsed.origin.toLowerCase().includes(new URL(allowedOrigin).origin.toLowerCase())) {
+            return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
+        }
+
+        // Perform server-side request to avoid browser CORS restrictions.
+        const response = await fetch(url, { method: 'GET', credentials: 'include' });
         
-        if (buffer.byteLength === 0) {
-            return NextResponse.json({ error: 'Received empty file' }, { status: 400 });
+        if (!response.ok) {
+            return NextResponse.json({ error: `Failed to fetch image: ${response.statusText}` }, { status: response.status });
         }
 
+        const buffer = await response.arrayBuffer();
+        
         // Optimize the image using sharp
         const optimizedBuffer = await sharp(Buffer.from(buffer))
             .webp({ quality: 80 })
