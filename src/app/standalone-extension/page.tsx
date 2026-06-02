@@ -731,7 +731,7 @@ function StandaloneExtension() {
                                             </td>
                                             <td style={styles.td}>
                                                 <span>
-                                                    {item.width} x {item.height}
+                                                    w {item.width} × h {item.height}
                                                 </span>
                                                 <span style={styles.detailLine}>
                                                     {formatSize(item.sizeKb)} / {item.format.toUpperCase()}

@@ -992,7 +992,7 @@ function PagesContextPanel() {
                                             <strong>{item.name}</strong>
                                             <span style={styles.meta}>{item.source}</span>
                                             <span style={styles.meta}>
-                                                {item.width || '?'} x {item.height || '?'} / {formatSize(item.sizeKb)} / {item.format.toUpperCase()}
+                                                w {item.width || '?'} × h {item.height || '?'} / {formatSize(item.sizeKb)} / {item.format.toUpperCase()}
                                             </span>
                                         </div>
                                         <ScoreIndicator score={item.score} />
