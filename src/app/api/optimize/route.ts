@@ -2,8 +2,12 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
     try {
-        const body = await req.json();
-        const url = typeof body === 'object' && body ? (body as any).url : undefined;
+        const body = (await req.json()) as unknown;
+        let url: string | undefined;
+        if (typeof body === 'object' && body !== null) {
+            const candidate = body as { url?: unknown };
+            if (typeof candidate.url === 'string') url = candidate.url;
+        }
 
         if (!url || typeof url !== 'string') {
             return NextResponse.json({ error: 'Missing url' }, { status: 400 });
@@ -15,7 +19,7 @@ export async function POST(req: Request) {
         let parsed: URL;
         try {
             parsed = new URL(url);
-        } catch (err) {
+        } catch {
             return NextResponse.json({ error: 'Invalid url' }, { status: 400 });
         }
 
@@ -27,7 +31,9 @@ export async function POST(req: Request) {
         const response = await fetch(url, { method: 'GET', credentials: 'include' });
 
         return NextResponse.json({ ok: response.ok, status: response.status }, { status: 200 });
-    } catch (err: any) {
-        return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 });
+    } catch (err) {
+        // keep error handling generic; cast to Error when possible
+        const message = err instanceof Error ? err.message : String(err);
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }
