@@ -62,6 +62,26 @@ function getMediaOptimizationUrl(item: PageMediaItem) {
     return item.previewUrl;
 }
 
+async function triggerMediaOptimization(mediaUrl: string) {
+    if (!mediaUrl) {
+        throw new Error('Unable to locate a media URL for optimization.');
+    }
+
+    const res = await fetch('/api/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: mediaUrl }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+        throw new Error(json?.error || `Optimization proxy failed with status ${res.status}`);
+    }
+
+    return json;
+}
+
 function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     const issues: MediaIssue[] = [];
     const ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
@@ -74,7 +94,7 @@ function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     return issues;
 }
 
-async function optimizeAndReplaceMedia(client: ClientSDK, appContext: ApplicationContext, item: PageMediaItem) {
+async function optimizeAndReplaceMedia(client: ClientSDK, appContext: ApplicationContext, item: MediaItem) {
     // 1. Optimize the image via our server proxy
     const optimizeRes = await fetch('/api/optimize', {
         method: 'POST',
@@ -147,7 +167,7 @@ async function optimizeAndReplaceMedia(client: ClientSDK, appContext: Applicatio
     return await uploadRes.json();
 }
 
-function getOptimizationScore(item: PageMediaItem) {
+function getOptimizationScore(item: MediaItem) {
     const issues = getMediaIssues(item);
     let score = 100;
 
@@ -1014,7 +1034,7 @@ function PagesContextPanel() {
         if (action === 'optimize') {
             try {
                 setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
-                await optimizeAndReplaceMedia(client, appContext, item);
+                await optimizeAndReplaceMedia(client, appContext, item as unknown as MediaItem);
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
                 setActionMessage(
                     `Successfully optimized and replaced ${item.name} in Sitecore.`,
