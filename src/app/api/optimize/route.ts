@@ -43,7 +43,7 @@ export async function POST(req: Request) {
             .toBuffer();
 
         // Return the optimized image
-        return new Response(optimizedBuffer, {
+        return new Response(new Uint8Array(optimizedBuffer), {
             headers: {
                 'Content-Type': 'image/webp',
                 'Content-Length': optimizedBuffer.length.toString(),
