@@ -52,19 +52,17 @@ async function triggerMediaOptimization(mediaUrl: string) {
         throw new Error('Unable to locate a media URL for optimization.');
     }
 
-    const res = await fetch('/api/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: mediaUrl }),
+    const response = await fetch(mediaUrl, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'reload',
     });
 
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-        throw new Error(json?.error || `Optimization proxy failed with status ${res.status}`);
+    if (!response.ok) {
+        throw new Error(`Media request failed with status ${response.status}`);
     }
 
-    return json;
+    return response;
 }
 
 async function canWriteToClipboard() {
