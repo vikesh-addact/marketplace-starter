@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 export async function POST(req: Request) {
     try {
@@ -29,8 +30,25 @@ export async function POST(req: Request) {
 
         // Perform server-side request to avoid browser CORS restrictions.
         const response = await fetch(url, { method: 'GET', credentials: 'include' });
+        
+        if (!response.ok) {
+            return NextResponse.json({ error: `Failed to fetch image: ${response.statusText}` }, { status: response.status });
+        }
 
-        return NextResponse.json({ ok: response.ok, status: response.status }, { status: 200 });
+        const buffer = await response.arrayBuffer();
+        
+        // Optimize the image using sharp
+        const optimizedBuffer = await sharp(Buffer.from(buffer))
+            .webp({ quality: 80 })
+            .toBuffer();
+
+        // Return the optimized image
+        return new Response(optimizedBuffer, {
+            headers: {
+                'Content-Type': 'image/webp',
+                'Content-Length': optimizedBuffer.length.toString(),
+            },
+        });
     } catch (err) {
         // keep error handling generic; cast to Error when possible
         const message = err instanceof Error ? err.message : String(err);

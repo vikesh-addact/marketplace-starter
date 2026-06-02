@@ -19,6 +19,7 @@ interface PageMediaItem {
     format: string;
     altText: string;
     source: string;
+    path?: string;
 }
 
 interface MediaReference {
@@ -93,17 +94,91 @@ function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     return issues;
 }
 
-function getOptimizationScore(item: PageMediaItem) {
+async function optimizeAndReplaceMedia(client: ClientSDK, appContext: ApplicationContext, item: MediaItem) {
+    // 1. Optimize the image via our server proxy
+    const optimizeRes = await fetch('/api/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: getMediaOptimizationUrl(item) }),
+    });
+
+    if (!optimizeRes.ok) {
+        const errorJson = await optimizeRes.json().catch(() => ({}));
+        throw new Error(errorJson.error || `Optimization failed with status ${optimizeRes.status}`);
+    }
+
+    const optimizedBlob = await optimizeRes.blob();
+
+    // 2. Request a pre-signed upload URL from Sitecore Authoring GraphQL
+    const uploadMutation = `
+        mutation GetUploadUrl($itemPath: String!) {
+            uploadMedia(input: {
+                itemPath: $itemPath,
+                overwriteExisting: true
+            }) {
+                presignedUploadUrl
+            }
+        }
+    `;
+
+    // Clean up the path for the mutation
+    const mediaLibraryMarker = '/sitecore/media library/';
+    let itemPath = item.path || '';
+    if (itemPath.toLowerCase().startsWith(mediaLibraryMarker)) {
+        itemPath = itemPath.slice(mediaLibraryMarker.length);
+    }
+
+    const uploadResult = await client.mutate('xmc.authoring.graphql', {
+        params: {
+            query: getGraphqlQueryParams(appContext),
+            body: {
+                query: uploadMutation,
+                variables: {
+                    itemPath
+                },
+            },
+        },
+    });
+
+    const uploadData = uploadResult as { data?: { uploadMedia?: { presignedUploadUrl?: string }, errors?: Array<{ message: string }> } };
+
+    if (uploadData.data?.errors?.length) {
+        throw new Error(uploadData.data.errors[0].message);
+    }
+
+    const presignedUrl = uploadData.data?.uploadMedia?.presignedUploadUrl;
+    if (!presignedUrl) {
+        throw new Error('Failed to retrieve a pre-signed upload URL from Sitecore.');
+    }
+
+    // 3. Upload the optimized blob to the pre-signed URL
+    const formData = new FormData();
+    formData.append('file', optimizedBlob, `${item.name.split('.')[0]}.webp`);
+
+    const uploadRes = await fetch(presignedUrl, {
+        method: 'POST',
+        body: formData,
+    });
+
+    if (!uploadRes.ok) {
+        throw new Error(`Media upload to Sitecore failed with status ${uploadRes.status}`);
+    }
+
+    return await uploadRes.json();
+}
+
+function getOptimizationScore(item: MediaItem) {
     const issues = getMediaIssues(item);
     let score = 100;
 
-    if (issues.includes('missingAlt')) score -= 30;
-    if (issues.includes('largeImage')) score -= Math.min(30, Math.round((item.sizeKb - 500) / 40) + 10);
+    if (issues.includes('missingAlt')) score -= 25;
+    if (issues.includes('largeImage')) score -= Math.min(30, Math.round((item.sizeKb - 500) / 35) + 12);
     if (issues.includes('badAspectRatio')) score -= 15;
     if (issues.includes('unsupportedFormat')) score -= 20;
 
     return Math.max(0, Math.min(100, score));
 }
+
 
 function getScoreTone(score: number) {
     if (score >= 85) return { background: '#dcfce7', color: '#166534', border: '#86efac' };
@@ -473,6 +548,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
                 format: item.extension?.value?.replace('.', '') || previewUrl.split('?')[0].split('.').pop() || 'unknown',
                 altText: reference.altText || item.alt?.value || '',
                 source: reference.source,
+                path: item.path,
             };
         })
         .filter((item): item is PageMediaItem => Boolean(item?.previewUrl))
@@ -957,15 +1033,20 @@ function PagesContextPanel() {
 
         if (action === 'optimize') {
             try {
-                await triggerMediaOptimization(getMediaOptimizationUrl(item));
+                setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
+                await optimizeAndReplaceMedia(client, appContext, item as unknown as MediaItem);
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
                 setActionMessage(
-                    `Requested optimization for ${item.name}. If Dianoga is configured on the Sitecore host, this warms the media cache and triggers optimization.`,
+                    `Successfully optimized and replaced ${item.name} in Sitecore.`,
                 );
+                // Refresh the item in the list
+                setPageMedia((current) => current.map((mediaItem) => 
+                    mediaItem.id === itemId ? { ...mediaItem, format: 'webp' } : mediaItem
+                ));
             } catch (actionError) {
                 console.error('Error requesting media optimization:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
-                setActionMessage(`Optimization request failed: ${actionError instanceof Error ? actionError.message : String(actionError)}`);
+                setActionMessage(`Optimization failed: ${actionError instanceof Error ? actionError.message : String(actionError)}`);
             }
             return;
         }
@@ -1054,10 +1135,8 @@ function PagesContextPanel() {
 
                                     <div style={styles.actions}>
                                         <ActionButton
-                                            disabled
                                             label="Optimize"
                                             state={actionStates[`${item.id}-optimize`] ?? 'idle'}
-                                            title="Requires media upload/replacement API"
                                             onClick={() => runAction(item.id, 'optimize')}
                                         />
                                         <ActionButton
