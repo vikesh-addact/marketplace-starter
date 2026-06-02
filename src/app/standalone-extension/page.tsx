@@ -33,6 +33,30 @@ function getGraphqlQueryParams(appContext?: ApplicationContext) {
     return sitecoreContextId ? { sitecoreContextId } : undefined;
 }
 
+function getSitecoreHostOrigin(appContext?: ApplicationContext) {
+    const url = appContext?.url;
+    if (typeof url === 'string') {
+        try {
+            return new URL(url).origin;
+        } catch {
+            // Ignore invalid URL and fall back to default origin
+        }
+    }
+
+    return defaultMediaHostOrigin;
+}
+
+function buildContentEditorUrl(item: MediaItem, appContext?: ApplicationContext) {
+    const origin = getSitecoreHostOrigin(appContext);
+    return `${origin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
+}
+
+function openContentEditor(item: MediaItem, appContext?: ApplicationContext) {
+    const editorUrl = buildContentEditorUrl(item, appContext);
+    window.open(editorUrl, '_blank', 'noopener');
+    return editorUrl;
+}
+
 function formatItemIdForGraphql(value: string) {
     const cleanId = value.replace(/[{}-]/g, '');
 
@@ -592,17 +616,25 @@ function StandaloneExtension() {
             return;
         }
 
-        if (action === 'copyPath' || action === 'copyId') {
+        if (action === 'copyPath') {
             try {
-                const textToCopy = action === 'copyPath' ? (item.path ?? '') : item.id;
-                if (!textToCopy) {
-                    throw new Error('No text available to copy');
-                }
-                await navigator.clipboard.writeText(textToCopy);
+                openContentEditor(item, appContext);
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
             } catch (actionError) {
-                console.error(`Error copying ${action === 'copyPath' ? 'path' : 'ID'}:`, actionError);
+                console.error('Error opening Content Editor:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
+            }
+            return;
+        }
+
+        if (action === 'copyId') {
+            try {
+                await navigator.clipboard.writeText(item.id);
+                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+            } catch (actionError) {
+                console.error('Error copying ID, falling back to opening Content Editor:', actionError);
+                openContentEditor(item, appContext);
+                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
             }
             return;
         }
@@ -727,7 +759,7 @@ function StandaloneExtension() {
                                                         onClick={() => runAction(item.id, 'optimize')}
                                                     />
                                                     <ActionButton
-                                                        label="Copy path"
+                                                        label="Open editor"
                                                         state={actionStates[`${item.id}-copyPath`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'copyPath')}
                                                     />
