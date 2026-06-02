@@ -599,7 +599,9 @@ function StandaloneExtension() {
 
     async function runAction(itemId: string, action: MediaAction) {
         const actionKey = `${itemId}-${action}`;
-        setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
+        if (action !== 'copyPath') {
+            setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
+        }
 
         const item = mediaItems.find((mediaItem) => mediaItem.id === itemId);
         if (!item || !client || !appContext) {
@@ -757,6 +759,7 @@ function StandaloneExtension() {
                                                 <div style={styles.actions}>
                                                     <ActionButton
                                                         label="ALT"
+                                                        disabled={actionStates[`${item.id}-alt`] !== 'idle'}
                                                         state={actionStates[`${item.id}-alt`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'alt')}
                                                     />
@@ -770,11 +773,6 @@ function StandaloneExtension() {
                                                         label="Open editor"
                                                         state={actionStates[`${item.id}-copyPath`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'copyPath')}
-                                                    />
-                                                    <ActionButton
-                                                        label="Copy ID"
-                                                        state={actionStates[`${item.id}-copyId`] ?? 'idle'}
-                                                        onClick={() => runAction(item.id, 'copyId')}
                                                     />
                                                 </div>
                                             </td>
