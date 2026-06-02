@@ -625,7 +625,6 @@ function StandaloneExtension() {
         if (action === 'copyPath') {
             try {
                 openContentEditor(item);
-                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
             } catch (actionError) {
                 console.error('Error opening Content Editor:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
