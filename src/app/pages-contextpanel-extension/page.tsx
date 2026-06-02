@@ -6,7 +6,7 @@ import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-mark
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
-type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect';
+type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
 type ActionState = 'idle' | 'working' | 'done' | 'failed';
 
 interface PageMediaItem {
@@ -42,6 +42,20 @@ interface HostStateContext {
 }
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
+
+function buildContentEditorUrl(item: PageMediaItem, origin: string) {
+    if (!origin) {
+        throw new Error('Unable to resolve Sitecore host origin for Content Editor URL');
+    }
+
+    return `${origin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
+}
+
+function openContentEditor(item: PageMediaItem, origin: string) {
+    const editorUrl = buildContentEditorUrl(item, origin);
+    window.open(editorUrl, '_blank', 'noopener');
+    return editorUrl;
+}
 
 function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     const issues: MediaIssue[] = [];
@@ -906,6 +920,17 @@ function PagesContextPanel() {
             return;
         }
 
+        if (action === 'copyPath') {
+            try {
+                const origin = getHostMediaOrigin(hostState) || (appContext?.url ? new URL(appContext.url).origin : '');
+                openContentEditor(item, origin);
+            } catch (actionError) {
+                console.error('Error opening Content Editor:', actionError);
+                setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
+            }
+            return;
+        }
+
         if (action !== 'alt') {
             setActionMessage('Optimize, WebP, and ratio changes require a media upload/replacement API. ALT updates are persisted through Authoring GraphQL.');
             return;
@@ -967,7 +992,7 @@ function PagesContextPanel() {
                                             <strong>{item.name}</strong>
                                             <span style={styles.meta}>{item.source}</span>
                                             <span style={styles.meta}>
-                                                {item.width || '?'} x {item.height || '?'} / {formatSize(item.sizeKb)} / {item.format.toUpperCase()}
+                                                w {item.width || '?'} × h {item.height || '?'} / {formatSize(item.sizeKb)} / {item.format.toUpperCase()}
                                             </span>
                                         </div>
                                         <ScoreIndicator score={item.score} />
@@ -989,28 +1014,24 @@ function PagesContextPanel() {
                                     )}
 
                                     <div style={styles.actions}>
-                                        <ActionButton
+                                        {/* <ActionButton
                                             disabled
                                             label="Optimize"
                                             state={actionStates[`${item.id}-optimize`] ?? 'idle'}
                                             title="Requires media upload/replacement API"
                                             onClick={() => runAction(item.id, 'optimize')}
+                                        /> */}
+                                        <ActionButton
+                                            label="ALT"
+                                            disabled={actionStates[`${item.id}-alt`] === 'working' || actionStates[`${item.id}-alt`] === 'done'}
+                                            state={actionStates[`${item.id}-alt`] ?? 'idle'}
+                                            onClick={() => runAction(item.id, 'alt')}
                                         />
                                         <ActionButton
-                                            disabled
-                                            label="WebP"
-                                            state={actionStates[`${item.id}-webp`] ?? 'idle'}
-                                            title="Requires media upload/replacement API"
-                                            onClick={() => runAction(item.id, 'webp')}
+                                            label="Open editor"
+                                            state={actionStates[`${item.id}-copyPath`] ?? 'idle'}
+                                            onClick={() => runAction(item.id, 'copyPath')}
                                         />
-                                        <ActionButton
-                                            disabled
-                                            label="Ratio"
-                                            state={actionStates[`${item.id}-aspect`] ?? 'idle'}
-                                            title="Requires media upload/replacement API"
-                                            onClick={() => runAction(item.id, 'aspect')}
-                                        />
-                                        <ActionButton label="ALT" state={actionStates[`${item.id}-alt`] ?? 'idle'} onClick={() => runAction(item.id, 'alt')} />
                                     </div>
                                 </article>
                             ))}

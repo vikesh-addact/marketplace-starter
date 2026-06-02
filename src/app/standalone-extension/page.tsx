@@ -33,28 +33,32 @@ function getGraphqlQueryParams(appContext?: ApplicationContext) {
     return sitecoreContextId ? { sitecoreContextId } : undefined;
 }
 
-function getSitecoreHostOrigin(appContext?: ApplicationContext) {
-    const url = appContext?.url;
-    if (typeof url === 'string') {
+function buildContentEditorUrl(item: MediaItem) {
+    return `${defaultMediaHostOrigin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
+}
+
+function openContentEditor(item: MediaItem) {
+    const editorUrl = buildContentEditorUrl(item);
+    window.open(editorUrl, '_blank', 'noopener');
+    return editorUrl;
+}
+
+async function canWriteToClipboard() {
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+        return false;
+    }
+
+    if (navigator.permissions && typeof navigator.permissions.query === 'function') {
         try {
-            return new URL(url).origin;
+            const status = await navigator.permissions.query({ name: 'clipboard-write' as PermissionName });
+            return status.state === 'granted' || status.state === 'prompt';
         } catch {
-            // Ignore invalid URL and fall back to default origin
+            // If permission query is not available due to environment restrictions,
+            // fall back to attempting clipboard write and handle failures.
         }
     }
 
-    return defaultMediaHostOrigin;
-}
-
-function buildContentEditorUrl(item: MediaItem, appContext?: ApplicationContext) {
-    const origin = getSitecoreHostOrigin(appContext);
-    return `${origin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
-}
-
-function openContentEditor(item: MediaItem, appContext?: ApplicationContext) {
-    const editorUrl = buildContentEditorUrl(item, appContext);
-    window.open(editorUrl, '_blank', 'noopener');
-    return editorUrl;
+    return true;
 }
 
 function formatItemIdForGraphql(value: string) {
@@ -595,7 +599,9 @@ function StandaloneExtension() {
 
     async function runAction(itemId: string, action: MediaAction) {
         const actionKey = `${itemId}-${action}`;
-        setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
+        if (action !== 'copyPath') {
+            setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
+        }
 
         const item = mediaItems.find((mediaItem) => mediaItem.id === itemId);
         if (!item || !client || !appContext) {
@@ -618,8 +624,7 @@ function StandaloneExtension() {
 
         if (action === 'copyPath') {
             try {
-                openContentEditor(item, appContext);
-                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+                openContentEditor(item);
             } catch (actionError) {
                 console.error('Error opening Content Editor:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
@@ -629,12 +634,16 @@ function StandaloneExtension() {
 
         if (action === 'copyId') {
             try {
+                const clipboardAvailable = await canWriteToClipboard();
+                if (!clipboardAvailable) {
+                    throw new Error('Clipboard write not available in this environment.');
+                }
+
                 await navigator.clipboard.writeText(item.id);
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
             } catch (actionError) {
-                console.error('Error copying ID, falling back to opening Content Editor:', actionError);
-                openContentEditor(item, appContext);
-                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
+                console.error('Error copying ID:', actionError);
+                setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
             }
             return;
         }
@@ -722,7 +731,7 @@ function StandaloneExtension() {
                                             </td>
                                             <td style={styles.td}>
                                                 <span>
-                                                    {item.width} x {item.height}
+                                                    w {item.width} × h {item.height}
                                                 </span>
                                                 <span style={styles.detailLine}>
                                                     {formatSize(item.sizeKb)} / {item.format.toUpperCase()}
@@ -749,24 +758,20 @@ function StandaloneExtension() {
                                                 <div style={styles.actions}>
                                                     <ActionButton
                                                         label="ALT"
+                                                        disabled={actionStates[`${item.id}-alt`] === 'working' || actionStates[`${item.id}-alt`] === 'done'}
                                                         state={actionStates[`${item.id}-alt`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'alt')}
                                                     />
-                                                    <ActionButton
+                                                    {/* <ActionButton
                                                         label="Optimize"
                                                         disabled
                                                         state={actionStates[`${item.id}-optimize`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'optimize')}
-                                                    />
+                                                    /> */}
                                                     <ActionButton
                                                         label="Open editor"
                                                         state={actionStates[`${item.id}-copyPath`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'copyPath')}
-                                                    />
-                                                    <ActionButton
-                                                        label="Copy ID"
-                                                        state={actionStates[`${item.id}-copyId`] ?? 'idle'}
-                                                        onClick={() => runAction(item.id, 'copyId')}
                                                     />
                                                 </div>
                                             </td>
