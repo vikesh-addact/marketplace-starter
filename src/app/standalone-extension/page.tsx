@@ -377,17 +377,10 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
 }
 
 async function optimizeAndReplaceMedia(client: ClientSDK, appContext: ApplicationContext, item: MediaItem) {
-    // 1. Fetch the image using the SDK's internal _fetch to bypass CORS
-    // This method communicates with the Sitecore Portal host which is allowed to fetch media.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const clientAny = client as any;
-    if (typeof clientAny._fetch !== 'function') {
-        throw new Error('ClientSDK._fetch is not available. CORS may prevent image optimization.');
-    }
-
-    const imageRes = await clientAny._fetch(new Request(getMediaOptimizationUrl(item)));
+    // 1. Fetch the image in the browser to handle authentication
+    const imageRes = await fetch(getMediaOptimizationUrl(item), { credentials: 'include' });
     if (!imageRes.ok) {
-        throw new Error(`Failed to fetch source image via SDK: ${imageRes.status} ${imageRes.statusText}`);
+        throw new Error(`Failed to fetch source image: ${imageRes.status} ${imageRes.statusText}`);
     }
     const imageBlob = await imageRes.blob();
 
