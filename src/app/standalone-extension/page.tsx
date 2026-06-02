@@ -396,81 +396,12 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         .filter((item) => ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format) && !item.name.toLowerCase().startsWith('thumbnail'));
 }
 
-async function optimizeAndReplaceMedia(client: ClientSDK, appContext: ApplicationContext, item: MediaItem) {
-    // 1. Optimize the image via our server proxy
-    const optimizeRes = await fetch('/api/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: getMediaOptimizationUrl(item) }),
-    });
-
-    if (!optimizeRes.ok) {
-        const errorJson = await optimizeRes.json().catch(() => ({}));
-        throw new Error(errorJson.error || `Optimization failed with status ${optimizeRes.status}`);
-    }
-
-    const optimizedBlob = await optimizeRes.blob();
-
-    // 2. Request a pre-signed upload URL from Sitecore Authoring GraphQL
-    const uploadMutation = `
-        mutation GetUploadUrl($itemPath: String!) {
-            uploadMedia(input: {
-                itemPath: $itemPath,
-                overwriteExisting: true
-            }) {
-                presignedUploadUrl
-            }
-        }
-    `;
-
-    // Clean up the path for the mutation
-    const mediaLibraryMarker = '/sitecore/media library/';
-    let itemPath = item.path || '';
-    if (itemPath.toLowerCase().startsWith(mediaLibraryMarker)) {
-        itemPath = itemPath.slice(mediaLibraryMarker.length);
-    }
-
-    const uploadResult = await client.mutate('xmc.authoring.graphql', {
-        params: {
-            query: getGraphqlQueryParams(appContext),
-            body: {
-                query: uploadMutation,
-                variables: {
-                    itemPath
-                },
-            },
-        },
-    });
-
-    const uploadData = uploadResult as { data?: { uploadMedia?: { presignedUploadUrl?: string }, errors?: Array<{ message: string }> } };
-    
-    if (uploadData.data?.errors?.length) {
-        throw new Error(uploadData.data.errors[0].message);
-    }
-
-    const presignedUrl = uploadData.data?.uploadMedia?.presignedUploadUrl;
-    if (!presignedUrl) {
-        throw new Error('Failed to retrieve a pre-signed upload URL from Sitecore.');
-    }
-
-    // 3. Upload the optimized blob to the pre-signed URL
-    const formData = new FormData();
-    formData.append('file', optimizedBlob, `${item.name.split('.')[0]}.webp`);
-
-    const uploadRes = await fetch(presignedUrl, {
-        method: 'POST',
-        body: formData,
-    });
-
-    if (!uploadRes.ok) {
-        throw new Error(`Media upload to Sitecore failed with status ${uploadRes.status}`);
-    }
-
-    return await uploadRes.json();
-}
-
 async function mockOptimizeMedia(item: MediaItem, action: MediaAction): Promise<MediaItem> {
     await new Promise((resolve) => setTimeout(resolve, 450));
+
+    if (action === 'optimize') {
+        return { ...item, sizeKb: Math.max(80, Math.round(item.sizeKb * 0.62)) };
+    }
 
     if (action === 'webp') {
         return { ...item, format: 'webp', sizeKb: Math.max(70, Math.round(item.sizeKb * 0.55)) };
@@ -727,14 +658,9 @@ function StandaloneExtension() {
 
         if (action === 'optimize') {
             try {
-                await optimizeAndReplaceMedia(client, appContext, item);
+                const mediaUrl = getMediaOptimizationUrl(item);
+                await triggerMediaOptimization(mediaUrl);
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
-                
-                // Refresh the item in the list (simplified, as we don't have the new URL yet, 
-                // but we know it was replaced in Sitecore)
-                setMediaItems((current) => current.map((mediaItem) => 
-                    mediaItem.id === itemId ? { ...mediaItem, format: 'webp' } : mediaItem
-                ));
             } catch (actionError) {
                 console.error('Error requesting media optimization:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
