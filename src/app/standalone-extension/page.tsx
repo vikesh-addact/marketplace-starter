@@ -759,7 +759,7 @@ function StandaloneExtension() {
                                                 <div style={styles.actions}>
                                                     <ActionButton
                                                         label="ALT"
-                                                        disabled={actionStates[`${item.id}-alt`] !== 'idle'}
+                                                        disabled={actionStates[`${item.id}-alt`] === 'working' || actionStates[`${item.id}-alt`] === 'done'}
                                                         state={actionStates[`${item.id}-alt`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'alt')}
                                                     />
