@@ -762,12 +762,12 @@ function StandaloneExtension() {
                                                         state={actionStates[`${item.id}-alt`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'alt')}
                                                     />
-                                                    <ActionButton
+                                                    {/* <ActionButton
                                                         label="Optimize"
                                                         disabled
                                                         state={actionStates[`${item.id}-optimize`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'optimize')}
-                                                    />
+                                                    /> */}
                                                     <ActionButton
                                                         label="Open editor"
                                                         state={actionStates[`${item.id}-copyPath`] ?? 'idle'}

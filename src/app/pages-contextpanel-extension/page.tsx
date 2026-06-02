@@ -1014,13 +1014,13 @@ function PagesContextPanel() {
                                     )}
 
                                     <div style={styles.actions}>
-                                        <ActionButton
+                                        {/* <ActionButton
                                             disabled
                                             label="Optimize"
                                             state={actionStates[`${item.id}-optimize`] ?? 'idle'}
                                             title="Requires media upload/replacement API"
                                             onClick={() => runAction(item.id, 'optimize')}
-                                        />
+                                        /> */}
                                         <ActionButton
                                             label="ALT"
                                             disabled={actionStates[`${item.id}-alt`] === 'working' || actionStates[`${item.id}-alt`] === 'done'}
