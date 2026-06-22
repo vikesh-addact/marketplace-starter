@@ -683,6 +683,59 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
     return mapGraphqlMediaDetails(result, references, appContext, mediaOrigin);
 }
 
+async function fetchPageFieldValue(client: ClientSDK, pageId: string, fieldName: string, appContext?: ApplicationContext) {
+    const query = `
+    query PageField {
+      item(where: { itemId: "{${pageId}}" }) {
+        field(name: "${fieldName}") {
+          value
+        }
+      }
+    }`;
+
+    const result = await client.mutate('xmc.authoring.graphql', {
+        params: {
+            query: getGraphqlQueryParams(appContext),
+            body: { query },
+        },
+    });
+
+    const data = unwrapGraphqlData(result) as { item?: { field?: { value?: string } } };
+    return data?.item?.field?.value ?? '';
+}
+
+function parseImageFieldToReference(value: string, fieldName: string): MediaReference | null {
+    if (!value) return null;
+
+    if (/<image\s/i.test(value)) {
+        const mediaId = readAttribute(value, 'mediaid');
+        const url = readAttribute(value, 'src');
+        if (!mediaId && !url) return null;
+
+        return {
+            id: mediaId ? normalizeMediaId(mediaId) : url,
+            url,
+            altText: readAttribute(value, 'alt'),
+            width: Number(readAttribute(value, 'width')) || 0,
+            height: Number(readAttribute(value, 'height')) || 0,
+            source: `Page field / ${fieldName}`,
+        };
+    }
+
+    if (/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(value) || value.includes('/-/media/')) {
+        return {
+            id: value,
+            url: value,
+            altText: '',
+            width: 0,
+            height: 0,
+            source: `Page field / ${fieldName}`,
+        };
+    }
+
+    return null;
+}
+
 function generateAltText(item: PageMediaItem) {
     return (
         item.altText ||
@@ -870,7 +923,19 @@ function PagesContextPanel() {
 
             try {
                 const dataSourceMediaReferences = await fetchDataSourceMediaReferences(client, dataSourceReferences, pageInfo?.language, appContext);
-                const mediaReferences = [...pageMediaReferences, ...dataSourceMediaReferences];
+                const mediaReferences: MediaReference[] = [...pageMediaReferences, ...dataSourceMediaReferences];
+
+                const pageId = pageInfo?.id;
+                if (pageId) {
+                    try {
+                        const imageFieldValue = await fetchPageFieldValue(client, pageId, 'Image', appContext);
+                        const imageRef = parseImageFieldToReference(imageFieldValue, 'Image');
+                        if (imageRef) mediaReferences.push(imageRef);
+                    } catch (fieldError) {
+                        console.error('Error fetching page Image field:', fieldError);
+                    }
+                }
+
                 const media = await fetchPageMediaDetails(client, mediaReferences, pageInfo?.language, appContext, mediaOrigin);
                 setPageMedia(media);
             } catch (mediaError) {
