@@ -444,7 +444,7 @@ function StandaloneExtension() {
                 setIsLoadingMedia(true);
 
                 const pageSize = 200;
-                let page = 1;
+                let skip = 0;
                 let totalCount = 0;
                 let allResults: Array<Record<string, unknown>> = [];
 
@@ -459,7 +459,7 @@ function StandaloneExtension() {
                                 query: {
                                 index: "sitecore_master_index"
                                 latestVersionOnly: true
-                                paging: { pageSize: ${pageSize}, page: ${page} }
+                                paging: { pageSize: ${pageSize}, skip: ${skip} }
                                 searchStatement: {
                                     criteria: [
                                     { field: "_path", value: "90ae357f61714ea9808c5600b678f726", criteriaType: "EXACT", operator: "MUST" }
@@ -523,7 +523,7 @@ function StandaloneExtension() {
 
                     totalCount = pageData.totalCount ?? 0;
                     allResults = allResults.concat(pageData.results);
-                    page++;
+                    skip += pageSize;
                 } while (allResults.length < totalCount);
 
                 const allMediaPayload = { data: { search: { results: allResults } } };
