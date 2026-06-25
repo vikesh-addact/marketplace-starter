@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
+import { generateAltText } from '@/src/utils/generateAltText';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
@@ -736,17 +737,6 @@ function parseImageFieldToReference(value: string, fieldName: string): MediaRefe
     return null;
 }
 
-function generateAltText(item: PageMediaItem) {
-    return (
-        item.altText ||
-        `${item.name
-            .replace(/\.[^/.]+$/, '')
-            .replace(/[_-]+/g, ' ')
-            .replace(/\bwebp\b/gi, '')
-            .trim()} illustration`
-    );
-}
-
 async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext, item: PageMediaItem, altText: string) {
     const mutation = `
       mutation UpdateMediaAlt($itemId: ID!, $altText: String!) {
@@ -1005,7 +995,7 @@ function PagesContextPanel() {
         setActionMessage('');
 
         try {
-            const altText = generateAltText(item);
+            const altText = await generateAltText(item.name, item.altText);
             await updateMediaAlt(client, appContext, item, altText);
             setPageMedia((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
             setActionStates((current) => ({ ...current, [actionKey]: 'done' }));

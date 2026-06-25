@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
+import { generateAltText } from '@/src/utils/generateAltText';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
@@ -69,17 +70,6 @@ function formatItemIdForGraphql(value: string) {
     }
 
     return value.startsWith('{') ? value : `{${value}}`;
-}
-
-function generateAltText(item: MediaItem) {
-    return (
-        item.altText ||
-        `${item.name
-            .replace(/\.[^/.]+$/, '')
-            .replace(/[_-]+/g, ' ')
-            .replace(/\bwebp\b/gi, '')
-            .trim()} illustration`
-    );
 }
 
 async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext, item: MediaItem, altText: string) {
@@ -611,7 +601,7 @@ function StandaloneExtension() {
 
         if (action === 'alt') {
             try {
-                const altText = generateAltText(item);
+                const altText = await generateAltText(item.name, item.altText);
                 await updateMediaAlt(client, appContext, item, altText);
                 setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
