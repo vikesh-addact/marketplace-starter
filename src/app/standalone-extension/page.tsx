@@ -21,39 +21,7 @@ interface MediaItem {
     altText: string;
     path?: string;
 }
-let cachedHostOrigin = '';
-
-async function resolveHostOrigin(appContext?: ApplicationContext): Promise<string> {
-    if (cachedHostOrigin) return cachedHostOrigin;
-
-    const envOrigin = process.env.NEXT_PUBLIC_SITECORE_HOST_ORIGIN;
-    if (envOrigin) {
-        cachedHostOrigin = envOrigin.replace(/\/$/, '');
-        return cachedHostOrigin;
-    }
-
-    const tenantId = appContext?.resourceAccess?.[0]?.tenantId;
-    if (tenantId) {
-        try {
-            const response = await fetch(
-                `https://platform-inventory.sitecorecloud.io/api/inventory/v1/tenants?id=${tenantId}`,
-                { credentials: 'include' },
-            );
-            if (response.ok) {
-                const data = await response.json();
-                const tenantUrl = data?.tenants?.[0]?.annotations?.URL;
-                if (tenantUrl) {
-                    cachedHostOrigin = tenantUrl.replace(/\/$/, '');
-                    return cachedHostOrigin;
-                }
-            }
-        } catch {
-            // Platform Inventory API unavailable, fall through
-        }
-    }
-
-    return cachedHostOrigin;
-}
+const SITECORE_HOST_ORIGIN = process.env.NEXT_PUBLIC_SITECORE_HOST_ORIGIN?.replace(/\/$/, '') || '';
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 
@@ -470,7 +438,7 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            const hostOrigin = await resolveHostOrigin(loadedAppContext);
+            const hostOrigin = SITECORE_HOST_ORIGIN;
 
             try {
                 setIsLoadingMedia(true);
@@ -647,8 +615,7 @@ function StandaloneExtension() {
 
         if (action === 'copyPath') {
             try {
-                const origin = await resolveHostOrigin(appContext);
-                openContentEditor(item, origin);
+                openContentEditor(item, SITECORE_HOST_ORIGIN);
             } catch (actionError) {
                 console.error('Error opening Content Editor:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
