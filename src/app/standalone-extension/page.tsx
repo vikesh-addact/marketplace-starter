@@ -462,42 +462,12 @@ function StandaloneExtension() {
                                 paging: { pageSize: ${pageSize}, skip: ${skip} }
                                 searchStatement: {
                                     criteria: [
-                                    {
-                                        field: "_path",
-                                        value: "90ae357f61714ea9808c5600b678f726",
-                                        criteriaType: EXACT,
-                                        operator: MUST,
-                                    }
-                                    {
-                                        field: "_templatename",
-                                        value: "Image",
-                                        criteriaType: EXACT,
-                                        operator: SHOULD,
-                                    }
-                                    {
-                                        field: "_templatename",
-                                        value: "Jpeg",
-                                        criteriaType: EXACT,
-                                        operator: SHOULD,
-                                    }
-                                    {
-                                        field: "_templatename",
-                                        value: "Png",
-                                        criteriaType: EXACT,
-                                        operator: SHOULD,
-                                    }
-                                    {
-                                        field: "_templatename",
-                                        value: "WebP",
-                                        criteriaType: EXACT,
-                                        operator: SHOULD,
-                                    }
-                                    {
-                                        field: "_templatename",
-                                        value: "Svg",
-                                        criteriaType: EXACT,
-                                        operator: SHOULD,
-                                    }
+                                    { field: "_path", value: "90ae357f61714ea9808c5600b678f726", criteriaType: "EXACT", operator: "MUST" }
+                                    { field: "_templatename", value: "Image", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "Jpeg", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "Png", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "WebP", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "Svg", criteriaType: "EXACT", operator: "SHOULD" }
                                     ]
                                 }
                                 }
