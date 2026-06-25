@@ -896,8 +896,12 @@ function PagesContextPanel() {
                 return;
             }
 
-            setIsLoading(true);
             const pageInfo = getCurrentPageInfo(pagesContext);
+            if (pageInfo && pageInfo.fields === undefined) {
+                return;
+            }
+
+            setIsLoading(true);
             const pageMediaReferences = extractPageMediaReferences(pagesContext);
             const dataSourceReferences = extractDataSourceReferences(pagesContext);
             const sitecoreContextId = getSitecoreContextId(appContext);
