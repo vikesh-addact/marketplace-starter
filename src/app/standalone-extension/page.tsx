@@ -442,97 +442,95 @@ function StandaloneExtension() {
 
             try {
                 setIsLoadingMedia(true);
-                const mediaResult = await client.mutate('xmc.authoring.graphql', {
-                    params: {
-                        query: getGraphqlQueryParams(loadedAppContext),
-                        body: {
-                            query: `
-                        query MediaOptimizerItems {
-                        search(
-                            query: {
-                            index: "sitecore_master_index"
-                            latestVersionOnly: true
-                            paging: { pageSize: 1000 }
-                            searchStatement: {
-                                criteria: [
-                                {
-                                    field: "_path"
-                                    value: "90ae357f61714ea9808c5600b678f726"
-                                    criteriaType: EXACT
-                                    operator: MUST
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Image"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Jpeg"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Png"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "WebP"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Svg"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                ]
-                            }
-                            }
-                        ) {
-                            results {
-                            itemId
-                            name
-                            path
-                            templateName
 
-                            innerItem {
-                                url
+                const pageSize = 200;
+                let page = 1;
+                let totalCount = 0;
+                let allResults: Array<Record<string, unknown>> = [];
 
-                                width: field(name: "Width") {
-                                value
+                do {
+                    const mediaResult = await client.mutate('xmc.authoring.graphql', {
+                        params: {
+                            query: getGraphqlQueryParams(loadedAppContext),
+                            body: {
+                                query: `
+                            query MediaOptimizerItems($pageSize: Int, $page: Int) {
+                            search(
+                                query: {
+                                index: "sitecore_master_index"
+                                latestVersionOnly: true
+                                paging: { pageSize: $pageSize, page: $page }
+                                searchStatement: {
+                                    criteria: [
+                                    { field: "_path", value: "90ae357f61714ea9808c5600b678f726", criteriaType: "EXACT", operator: "MUST" }
+                                    { field: "_templatename", value: "Image", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "Jpeg", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "Png", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "WebP", criteriaType: "EXACT", operator: "SHOULD" }
+                                    { field: "_templatename", value: "Svg", criteriaType: "EXACT", operator: "SHOULD" }
+                                    ]
                                 }
-
-                                height: field(name: "Height") {
-                                value
                                 }
+                            ) {
+                                totalCount
+                                results {
+                                itemId
+                                name
+                                path
+                                templateName
 
-                                size: field(name: "Size") {
-                                value
+                                innerItem {
+                                    url
+
+                                    width: field(name: "Width") {
+                                    value
+                                    }
+
+                                    height: field(name: "Height") {
+                                    value
+                                    }
+
+                                    size: field(name: "Size") {
+                                    value
+                                    }
+
+                                    extension: field(name: "Extension") {
+                                    value
+                                    }
+
+                                    alt: field(name: "Alt") {
+                                    value
+                                    }
                                 }
-
-                                extension: field(name: "Extension") {
-                                value
-                                }
-
-                                alt: field(name: "Alt") {
-                                value
                                 }
                             }
                             }
-                        }
-                        }
-                        `,
+                            `,
+                                variables: { pageSize, page },
+                            },
                         },
-                    },
-                });
+                    });
 
-                const items = mapGraphqlMediaItems(mediaResult, loadedAppContext, hostOrigin);
+                    const resultData = mediaResult as {
+                        data?: {
+                            search?: {
+                                totalCount?: number;
+                                results?: Array<Record<string, unknown>>;
+                            };
+                        };
+                    };
+                    const pageData = resultData?.data?.search;
+                    if (!pageData?.results?.length) break;
+
+                    totalCount = pageData.totalCount ?? 0;
+                    allResults = allResults.concat(pageData.results);
+                    page++;
+                } while (allResults.length < totalCount);
+
+                const allMediaPayload = {
+                    data: { data: { search: { results: allResults } } },
+                };
+                const items = mapGraphqlMediaItems(allMediaPayload, loadedAppContext, hostOrigin);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
             } catch (mediaError) {
