@@ -454,12 +454,12 @@ function StandaloneExtension() {
                             query: getGraphqlQueryParams(loadedAppContext),
                             body: {
                                 query: `
-                            query MediaOptimizerItems {
+                            query MediaOptimizerItems($pageSize: Int, $page: Int) {
                             search(
                                 query: {
                                 index: "sitecore_master_index"
                                 latestVersionOnly: true
-                                paging: { pageSize: ${pageSize}, page: ${page} }
+                                paging: { pageSize: $pageSize, page: $page }
                                 searchStatement: {
                                     criteria: [
                                     { field: "_path", value: "90ae357f61714ea9808c5600b678f726", criteriaType: "EXACT", operator: "MUST" }
@@ -500,12 +500,13 @@ function StandaloneExtension() {
 
                                     alt: field(name: "Alt") {
                                     value
-                                }
+                                    }
                                 }
                                 }
                             }
                             }
                             `,
+                                variables: { pageSize, page },
                             },
                         },
                     });
@@ -526,7 +527,9 @@ function StandaloneExtension() {
                     page++;
                 } while (allResults.length < totalCount);
 
-                const allMediaPayload = { data: { search: { results: allResults } } };
+                const allMediaPayload = {
+                    data: { data: { search: { results: allResults } } },
+                };
                 const items = mapGraphqlMediaItems(allMediaPayload, loadedAppContext, hostOrigin);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
