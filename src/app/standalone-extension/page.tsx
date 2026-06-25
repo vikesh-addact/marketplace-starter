@@ -21,8 +21,22 @@ interface MediaItem {
     altText: string;
     path?: string;
 }
+interface HostStateContext {
+    xmCloudTenantInfo?: {
+        url?: string;
+    };
+}
+
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
-const defaultMediaHostOrigin = 'https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io';
+function getHostOrigin(hostState?: HostStateContext) {
+    const hostUrl = hostState?.xmCloudTenantInfo?.url;
+    if (!hostUrl) return '';
+    try {
+        return new URL(hostUrl).origin;
+    } catch {
+        return hostUrl.replace(/\/$/, '');
+    }
+}
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
@@ -34,12 +48,12 @@ function getGraphqlQueryParams(appContext?: ApplicationContext) {
     return sitecoreContextId ? { sitecoreContextId } : undefined;
 }
 
-function buildContentEditorUrl(item: MediaItem) {
-    return `${defaultMediaHostOrigin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
+function buildContentEditorUrl(item: MediaItem, mediaHostOrigin: string) {
+    return `${mediaHostOrigin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
 }
 
-function openContentEditor(item: MediaItem) {
-    const editorUrl = buildContentEditorUrl(item);
+function openContentEditor(item: MediaItem, mediaHostOrigin: string) {
+    const editorUrl = buildContentEditorUrl(item, mediaHostOrigin);
     window.open(editorUrl, '_blank', 'noopener');
     return editorUrl;
 }
@@ -407,6 +421,7 @@ function ActionButton({ label, state, onClick, disabled = false }: { label: stri
 function StandaloneExtension() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const [appContext, setAppContext] = useState<ApplicationContext>();
+    const [hostState, setHostState] = useState<HostStateContext>();
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
     const [mediaLoadMessage, setMediaLoadMessage] = useState('');
@@ -421,6 +436,7 @@ function StandaloneExtension() {
             }
 
             let loadedAppContext: ApplicationContext | undefined;
+            let loadedHostState: HostStateContext | undefined;
 
             try {
                 const contextResult = await client.query('application.context');
@@ -437,7 +453,15 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            const hostOrigin = defaultMediaHostOrigin;
+            try {
+                const hostResult = await client.query('host.state');
+                loadedHostState = hostResult.data as HostStateContext;
+                setHostState(loadedHostState);
+            } catch (hostError) {
+                console.error('Error retrieving host.state:', hostError);
+            }
+
+            const hostOrigin = getHostOrigin(loadedHostState);
 
             try {
                 setIsLoadingMedia(true);
@@ -614,7 +638,8 @@ function StandaloneExtension() {
 
         if (action === 'copyPath') {
             try {
-                openContentEditor(item);
+                const origin = getHostOrigin(hostState);
+                openContentEditor(item, origin);
             } catch (actionError) {
                 console.error('Error opening Content Editor:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
