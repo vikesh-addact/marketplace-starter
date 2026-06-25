@@ -542,13 +542,15 @@ function StandaloneExtension() {
 
                     const resultData = mediaResult as {
                         data?: {
-                            search?: {
-                                totalCount?: number;
-                                results?: Array<Record<string, unknown>>;
+                            data?: {
+                                search?: {
+                                    totalCount?: number;
+                                    results?: Array<Record<string, unknown>>;
+                                };
                             };
                         };
                     };
-                    const pageData = resultData?.data?.search;
+                    const pageData = resultData?.data?.data?.search;
                     if (!pageData?.results?.length) break;
 
                     totalCount = pageData.totalCount ?? 0;
