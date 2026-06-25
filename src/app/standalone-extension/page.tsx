@@ -21,22 +21,41 @@ interface MediaItem {
     altText: string;
     path?: string;
 }
-interface HostStateContext {
-    xmCloudTenantInfo?: {
-        url?: string;
-    };
+let cachedHostOrigin = '';
+
+async function resolveHostOrigin(appContext?: ApplicationContext): Promise<string> {
+    if (cachedHostOrigin) return cachedHostOrigin;
+
+    const envOrigin = process.env.NEXT_PUBLIC_SITECORE_HOST_ORIGIN;
+    if (envOrigin) {
+        cachedHostOrigin = envOrigin.replace(/\/$/, '');
+        return cachedHostOrigin;
+    }
+
+    const tenantId = appContext?.resourceAccess?.[0]?.tenantId;
+    if (tenantId) {
+        try {
+            const response = await fetch(
+                `https://platform-inventory.sitecorecloud.io/api/inventory/v1/tenants?id=${tenantId}`,
+                { credentials: 'include' },
+            );
+            if (response.ok) {
+                const data = await response.json();
+                const tenantUrl = data?.tenants?.[0]?.annotations?.URL;
+                if (tenantUrl) {
+                    cachedHostOrigin = tenantUrl.replace(/\/$/, '');
+                    return cachedHostOrigin;
+                }
+            }
+        } catch {
+            // Platform Inventory API unavailable, fall through
+        }
+    }
+
+    return cachedHostOrigin;
 }
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
-function getHostOrigin(hostState?: HostStateContext) {
-    const hostUrl = hostState?.xmCloudTenantInfo?.url;
-    if (!hostUrl) return '';
-    try {
-        return new URL(hostUrl).origin;
-    } catch {
-        return hostUrl.replace(/\/$/, '');
-    }
-}
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
@@ -421,7 +440,6 @@ function ActionButton({ label, state, onClick, disabled = false }: { label: stri
 function StandaloneExtension() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const [appContext, setAppContext] = useState<ApplicationContext>();
-    const [hostState, setHostState] = useState<HostStateContext>();
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
     const [mediaLoadMessage, setMediaLoadMessage] = useState('');
@@ -436,7 +454,6 @@ function StandaloneExtension() {
             }
 
             let loadedAppContext: ApplicationContext | undefined;
-            let loadedHostState: HostStateContext | undefined;
 
             try {
                 const contextResult = await client.query('application.context');
@@ -453,15 +470,7 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            try {
-                const hostResult = await client.query('host.state');
-                loadedHostState = hostResult.data as HostStateContext;
-                setHostState(loadedHostState);
-            } catch (hostError) {
-                console.error('Error retrieving host.state:', hostError);
-            }
-
-            const hostOrigin = getHostOrigin(loadedHostState);
+            const hostOrigin = await resolveHostOrigin(loadedAppContext);
 
             try {
                 setIsLoadingMedia(true);
@@ -638,7 +647,7 @@ function StandaloneExtension() {
 
         if (action === 'copyPath') {
             try {
-                const origin = getHostOrigin(hostState);
+                const origin = await resolveHostOrigin(appContext);
                 openContentEditor(item, origin);
             } catch (actionError) {
                 console.error('Error opening Content Editor:', actionError);
