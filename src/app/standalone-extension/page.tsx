@@ -443,11 +443,17 @@ function StandaloneExtension() {
                 const sitesResult = await client.query('xmc.xmapp.listSites', {
                     params: { query: getGraphqlQueryParams(loadedAppContext) },
                 });
-                const sites = sitesResult.data as Array<{ thumbnail?: { url?: string } }> | undefined;
-                if (sites && sites.length > 0) {
-                    const thumbnailUrl = sites[0]?.thumbnail?.url;
-                    if (thumbnailUrl) {
-                        hostOrigin = new URL(thumbnailUrl).origin;
+                console.log('listSites raw result:', sitesResult);
+                const raw = sitesResult.data ?? sitesResult;
+                const sites = Array.isArray(raw) ? raw : 
+                    Array.isArray((raw as Record<string, unknown>)?.data) 
+                        ? (raw as Record<string, unknown>).data as Array<Record<string, unknown>>
+                        : [];
+                if (sites.length > 0) {
+                    const thumbnailUrl = (sites[0] as Record<string, unknown>)?.thumbnail as Record<string, unknown> | undefined;
+                    const url = thumbnailUrl?.url as string | undefined;
+                    if (url) {
+                        hostOrigin = new URL(url).origin;
                     }
                 }
             } catch (sitesError) {
