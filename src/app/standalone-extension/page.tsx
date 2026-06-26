@@ -448,17 +448,17 @@ function StandaloneExtension() {
                     const thumbnailUrl = sites[0]?.thumbnail?.url;
                     if (thumbnailUrl) {
                         hostOrigin = new URL(thumbnailUrl).origin;
-                        setMediaHostOrigin(hostOrigin);
                     }
                 }
             } catch (sitesError) {
                 console.error('Error resolving media host origin from sites:', sitesError);
             }
 
-            if (!hostOrigin && loadedAppContext?.url) {
-                try {
-                    hostOrigin = new URL(loadedAppContext.url).origin;
-                } catch { }
+            setMediaHostOrigin(hostOrigin);
+            if (!hostOrigin) {
+                console.warn('Media host origin could not be resolved from xmc.xmapp.listSites thumbnail');
+            } else {
+                console.log('Resolved media host origin:', hostOrigin);
             }
 
             try {
