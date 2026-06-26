@@ -447,12 +447,18 @@ function StandaloneExtension() {
                 if (sites && sites.length > 0) {
                     const thumbnailUrl = sites[0]?.thumbnail?.url;
                     if (thumbnailUrl) {
-                        hostOrigin = thumbnailUrl.split('/-/media')[0];
+                        hostOrigin = new URL(thumbnailUrl).origin;
                         setMediaHostOrigin(hostOrigin);
                     }
                 }
             } catch (sitesError) {
                 console.error('Error resolving media host origin from sites:', sitesError);
+            }
+
+            if (!hostOrigin && loadedAppContext?.url) {
+                try {
+                    hostOrigin = new URL(loadedAppContext.url).origin;
+                } catch { }
             }
 
             try {
