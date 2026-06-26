@@ -21,8 +21,6 @@ interface MediaItem {
     altText: string;
     path?: string;
 }
-const SITECORE_HOST_ORIGIN = process.env.NEXT_PUBLIC_SITECORE_HOST_ORIGIN?.replace(/\/$/, '') || '';
-
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
@@ -411,6 +409,7 @@ function StandaloneExtension() {
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
     const [mediaLoadMessage, setMediaLoadMessage] = useState('');
+    const [mediaHostOrigin, setMediaHostOrigin] = useState('');
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<'all' | 'needsWork' | 'missingAlt' | 'largeImage'>('all');
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
@@ -438,7 +437,23 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            const hostOrigin = SITECORE_HOST_ORIGIN;
+            let hostOrigin = '';
+
+            try {
+                const sitesResult = await client.query('xmc.xmapp.listSites', {
+                    params: { query: getGraphqlQueryParams(loadedAppContext) },
+                });
+                const sites = sitesResult.data as Array<{ thumbnail?: { url?: string } }> | undefined;
+                if (sites && sites.length > 0) {
+                    const thumbnailUrl = sites[0]?.thumbnail?.url;
+                    if (thumbnailUrl) {
+                        hostOrigin = thumbnailUrl.split('/-/media')[0];
+                        setMediaHostOrigin(hostOrigin);
+                    }
+                }
+            } catch (sitesError) {
+                console.error('Error resolving media host origin from sites:', sitesError);
+            }
 
             try {
                 setIsLoadingMedia(true);
@@ -615,7 +630,7 @@ function StandaloneExtension() {
 
         if (action === 'copyPath') {
             try {
-                openContentEditor(item, SITECORE_HOST_ORIGIN);
+                openContentEditor(item, mediaHostOrigin);
             } catch (actionError) {
                 console.error('Error opening Content Editor:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
