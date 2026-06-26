@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
+import { generateAltText } from '@/src/utils/generateAltText';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
@@ -21,7 +22,6 @@ interface MediaItem {
     path?: string;
 }
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
-const defaultMediaHostOrigin = 'https://xmc-skeidarlivi6ad8-skeidarstag42cb-developmentf178.sitecorecloud.io';
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
@@ -33,12 +33,12 @@ function getGraphqlQueryParams(appContext?: ApplicationContext) {
     return sitecoreContextId ? { sitecoreContextId } : undefined;
 }
 
-function buildContentEditorUrl(item: MediaItem) {
-    return `${defaultMediaHostOrigin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
+function buildContentEditorUrl(item: MediaItem, mediaHostOrigin: string) {
+    return `${mediaHostOrigin}/sitecore/shell/Applications/Content%20Editor.aspx?sc_bw=1&fo=${encodeURIComponent(item.id)}&la=en&vs=1`;
 }
 
-function openContentEditor(item: MediaItem) {
-    const editorUrl = buildContentEditorUrl(item);
+function openContentEditor(item: MediaItem, mediaHostOrigin: string) {
+    const editorUrl = buildContentEditorUrl(item, mediaHostOrigin);
     window.open(editorUrl, '_blank', 'noopener');
     return editorUrl;
 }
@@ -69,17 +69,6 @@ function formatItemIdForGraphql(value: string) {
     }
 
     return value.startsWith('{') ? value : `{${value}}`;
-}
-
-function generateAltText(item: MediaItem) {
-    return (
-        item.altText ||
-        `${item.name
-            .replace(/\.[^/.]+$/, '')
-            .replace(/[_-]+/g, ' ')
-            .replace(/\bwebp\b/gi, '')
-            .trim()} illustration`
-    );
 }
 
 async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext, item: MediaItem, altText: string) {
@@ -420,6 +409,7 @@ function StandaloneExtension() {
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
     const [mediaLoadMessage, setMediaLoadMessage] = useState('');
+    const [mediaHostOrigin, setMediaHostOrigin] = useState('');
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<'all' | 'needsWork' | 'missingAlt' | 'largeImage'>('all');
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
@@ -447,7 +437,35 @@ function StandaloneExtension() {
                 console.error('Error retrieving application.context:', contextError);
             }
 
-            const hostOrigin = defaultMediaHostOrigin;
+            let hostOrigin = '';
+
+            try {
+                const sitesResult = await client.query('xmc.xmapp.listSites', {
+                    params: { query: getGraphqlQueryParams(loadedAppContext) },
+                });
+                console.log('listSites raw result:', sitesResult);
+                const raw = sitesResult.data ?? sitesResult;
+                const sites = Array.isArray(raw) ? raw : 
+                    Array.isArray((raw as Record<string, unknown>)?.data) 
+                        ? (raw as Record<string, unknown>).data as Array<Record<string, unknown>>
+                        : [];
+                if (sites.length > 0) {
+                    const thumbnailUrl = (sites[0] as Record<string, unknown>)?.thumbnail as Record<string, unknown> | undefined;
+                    const url = thumbnailUrl?.url as string | undefined;
+                    if (url) {
+                        hostOrigin = new URL(url).origin;
+                    }
+                }
+            } catch (sitesError) {
+                console.error('Error resolving media host origin from sites:', sitesError);
+            }
+
+            setMediaHostOrigin(hostOrigin);
+            if (!hostOrigin) {
+                console.warn('Media host origin could not be resolved from xmc.xmapp.listSites thumbnail');
+            } else {
+                console.log('Resolved media host origin:', hostOrigin);
+            }
 
             try {
                 setIsLoadingMedia(true);
@@ -461,7 +479,7 @@ function StandaloneExtension() {
                             query: {
                             index: "sitecore_master_index"
                             latestVersionOnly: true
-                            paging: { pageSize: 1000 }
+                            paging: { pageSize: 1500 }
                             searchStatement: {
                                 criteria: [
                                 {
@@ -611,7 +629,7 @@ function StandaloneExtension() {
 
         if (action === 'alt') {
             try {
-                const altText = generateAltText(item);
+                const altText = await generateAltText(item.name, item.altText);
                 await updateMediaAlt(client, appContext, item, altText);
                 setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
@@ -624,7 +642,7 @@ function StandaloneExtension() {
 
         if (action === 'copyPath') {
             try {
-                openContentEditor(item);
+                openContentEditor(item, mediaHostOrigin);
             } catch (actionError) {
                 console.error('Error opening Content Editor:', actionError);
                 setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
