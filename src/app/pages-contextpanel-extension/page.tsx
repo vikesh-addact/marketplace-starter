@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText } from '@/src/utils/generateAltText';
+import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
@@ -407,6 +408,7 @@ function hasMediaLocator(reference: MediaReference) {
 
 function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext, fallbackMediaOrigin = ''): PageMediaItem[] {
     const mediaOrigin = getMediaOrigin(references) || fallbackMediaOrigin;
+    type MediaDetailRecord = Record<string, { value?: string } | undefined>;
     const itemsById = unwrapGraphqlData(payload) as Record<
         string,
         {
@@ -415,12 +417,7 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
             name?: string;
             path?: string;
             url?: string;
-            width?: { value?: string };
-            height?: { value?: string };
-            size?: { value?: string };
-            extension?: { value?: string };
-            alt?: { value?: string };
-        } | null
+        } & MediaDetailRecord | null
     >;
 
     return references
@@ -434,21 +431,28 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
                 return undefined;
             }
 
+            const getField = (name: string) => item[name.toLowerCase()]?.value ?? '';
+
             const previewUrl = toMediaUrl(
-                item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', item.extension?.value ?? '', mediaOrigin),
+                item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', getField('Extension'), mediaOrigin),
                 appContext,
                 mediaOrigin,
             );
+            const rawWidth = Number(getField('Width')) || reference.width;
+            const rawHeight = Number(getField('Height')) || reference.height;
+            const rawSize = Math.round((Number(getField('Size')) || 0) / 1024);
+            const rawExt = getField('Extension').replace('.', '') || previewUrl.split('?')[0].split('.').pop() || 'unknown';
+            const rawAlt = reference.altText || getField('Alt') || '';
 
             return {
                 id: item.itemId ?? item.id ?? reference.id,
                 name: item.name ?? reference.id ?? 'Page media',
                 previewUrl,
-                width: Number(item.width?.value) || reference.width,
-                height: Number(item.height?.value) || reference.height,
-                sizeKb: Math.round((Number(item.size?.value) || 0) / 1024),
-                format: item.extension?.value?.replace('.', '') || previewUrl.split('?')[0].split('.').pop() || 'unknown',
-                altText: reference.altText || item.alt?.value || '',
+                width: rawWidth,
+                height: rawHeight,
+                sizeKb: rawSize,
+                format: rawExt,
+                altText: rawAlt,
                 source: reference.source,
             };
         })
@@ -653,24 +657,24 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
         return references.filter(hasMediaLocator).map((reference) => mapReferenceToMedia(reference, appContext, mediaOrigin));
     }
 
+    const fieldQueries = MEDIA_DETAIL_FIELDS
+        .map((f) => `${f.toLowerCase()}: field(name: "${f}") { value }`)
+        .join('\n              ');
+
     const query = `
     query PageMediaInspectorItems {
       ${mediaIds
-          .map(
-              (reference) => `
+            .map(
+                (reference) => `
             media${reference.originalIndex}: item(where: { itemId: "{${reference.id}}" }) {
               itemId
               name
               path
-              width: field(name: "Width") { value }
-              height: field(name: "Height") { value }
-              size: field(name: "Size") { value }
-              extension: field(name: "Extension") { value }
-              alt: field(name: "Alt") { value }
+              ${fieldQueries}
             }
           `,
-          )
-          .join('\n')}
+            )
+            .join('\n')}
     }
   `;
 
@@ -682,27 +686,6 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
     });
 
     return mapGraphqlMediaDetails(result, references, appContext, mediaOrigin);
-}
-
-async function fetchPageFieldValue(client: ClientSDK, pageId: string, fieldName: string, appContext?: ApplicationContext) {
-    const query = `
-    query PageField {
-      item(where: { itemId: "{${pageId}}" }) {
-        field(name: "${fieldName}") {
-          value
-        }
-      }
-    }`;
-
-    const result = await client.mutate('xmc.authoring.graphql', {
-        params: {
-            query: getGraphqlQueryParams(appContext),
-            body: { query },
-        },
-    });
-
-    const data = unwrapGraphqlData(result) as { item?: { field?: { value?: string } } };
-    return data?.item?.field?.value ?? '';
 }
 
 function parseImageFieldToReference(value: string, fieldName: string): MediaReference | null {
@@ -744,12 +727,12 @@ async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext,
           input: {
             database: "master"
             itemId: $itemId
-            fields: [{ name: "Alt", value: $altText, reset: false }]
+            fields: [{ name: "${ALT_FIELD_NAME}", value: $altText, reset: false }]
           }
         ) {
           item {
             itemId
-            field(name: "Alt") {
+            field(name: "${ALT_FIELD_NAME}") {
               value
             }
           }
@@ -922,11 +905,15 @@ function PagesContextPanel() {
                 const pageId = pageInfo?.id;
                 if (pageId) {
                     try {
-                        const imageFieldValue = await fetchPageFieldValue(client, pageId, 'Image', appContext);
-                        const imageRef = parseImageFieldToReference(imageFieldValue, 'Image');
-                        if (imageRef) mediaReferences.push(imageRef);
+                        const allFields = await fetchAllItemFields(client, pageId, appContext);
+                        for (const field of allFields) {
+                            if (containsImageData(field.value)) {
+                                const imageRef = parseImageFieldToReference(field.value, field.name);
+                                if (imageRef) mediaReferences.push(imageRef);
+                            }
+                        }
                     } catch (fieldError) {
-                        console.error('Error fetching page Image field:', fieldError);
+                        console.error('Error fetching page image fields:', fieldError);
                     }
                 }
 

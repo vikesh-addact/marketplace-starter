@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react';
 import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText } from '@/src/utils/generateAltText';
+import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
@@ -78,12 +79,12 @@ async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext,
         input: {
           database: "master"
           itemId: $itemId
-          fields: [{ name: "Alt", value: $altText, reset: false }]
+          fields: [{ name: "${ALT_FIELD_NAME}", value: $altText, reset: false }]
         }
       ) {
         item {
           itemId
-          field(name: "Alt") {
+          field(name: "${ALT_FIELD_NAME}") {
             value
           }
         }
@@ -168,42 +169,19 @@ function formatSize(sizeKb: number) {
 }
 
 function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext, mediaOriginOverride = ''): MediaItem[] {
+    type InnerItem = Record<string, { value?: string } | undefined> & { url?: string };
+    type SearchResult = {
+        itemId?: string;
+        name?: string;
+        path?: string;
+        templateName?: string;
+        innerItem?: InnerItem | null;
+    };
+
     const data = payload as {
         data?: {
-            search?: {
-                results?: Array<{
-                    itemId?: string;
-                    name?: string;
-                    path?: string;
-                    templateName?: string;
-                    innerItem?: {
-                        url?: string;
-                        width?: { value?: string };
-                        height?: { value?: string };
-                        size?: { value?: string };
-                        extension?: { value?: string };
-                        alt?: { value?: string };
-                    } | null;
-                }>;
-            };
-            data?: {
-                search?: {
-                    results?: Array<{
-                        itemId?: string;
-                        name?: string;
-                        path?: string;
-                        templateName?: string;
-                        innerItem?: {
-                            url?: string;
-                            width?: { value?: string };
-                            height?: { value?: string };
-                            size?: { value?: string };
-                            extension?: { value?: string };
-                            alt?: { value?: string };
-                        } | null;
-                    }>;
-                };
-            };
+            search?: { results?: SearchResult[] };
+            data?: { search?: { results?: SearchResult[] } };
         };
     };
 
@@ -344,17 +322,18 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
     return results
         .map((result, index) => {
             const inner = result.innerItem;
-            const ext = inner?.extension?.value?.replace('.', '').toLowerCase() ?? 'unknown';
+            const getField = (name: string) => inner?.[name.toLowerCase()]?.value ?? '';
+            const ext = getField('Extension').replace('.', '').toLowerCase() || 'unknown';
 
             return {
                 id: result.itemId ?? `media-${index}`,
                 name: result.name ?? `Media ${index + 1}`,
                 thumbnailUrl: getMediaThumbnailUrl(ext, inner?.url, result.path, mediaOrigin, appContext),
-                width: Number(inner?.width?.value) || 0,
-                height: Number(inner?.height?.value) || 0,
-                sizeKb: Math.round((Number(inner?.size?.value) || 0) / 1024),
+                width: Number(getField('Width')) || 0,
+                height: Number(getField('Height')) || 0,
+                sizeKb: Math.round((Number(getField('Size')) || 0) / 1024),
                 format: ext,
-                altText: inner?.alt?.value ?? '',
+                altText: getField('Alt'),
                 path: result.path,
             };
         })
@@ -531,25 +510,11 @@ function StandaloneExtension() {
                             innerItem {
                                 url
 
-                                width: field(name: "Width") {
-                                value
-                                }
-
-                                height: field(name: "Height") {
-                                value
-                                }
-
-                                size: field(name: "Size") {
-                                value
-                                }
-
-                                extension: field(name: "Extension") {
-                                value
-                                }
-
-                                alt: field(name: "Alt") {
-                                value
-                                }
+                                ${MEDIA_DETAIL_FIELDS.map(
+                                    (f) => `${f.toLowerCase()}: field(name: "${f}") {
+                                    value
+                                }`,
+                                ).join('\n                                ')}
                             }
                             }
                         }
