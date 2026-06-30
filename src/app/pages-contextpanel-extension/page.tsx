@@ -1017,7 +1017,7 @@ function PagesContextPanel() {
         setActionMessage('');
 
         try {
-            const altText = await generateAltText({ name: item.name, previewUrl: item.previewUrl }, item.altText);
+            const altText = await generateAltText(item.name, item.altText);
             await updateMediaAlt(client, appContext, item, altText);
             setPageMedia((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
             setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
