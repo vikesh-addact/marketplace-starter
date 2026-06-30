@@ -2,10 +2,26 @@ const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '';
 const GEMINI_MODEL = 'gemini-flash-latest';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-export async function generateAltText(name: string, existingAltText: string): Promise<string> {
+async function imageUrlToBase64(imageUrl: string): Promise<{ mimeType: string; data: string }> {
+    const response = await fetch(imageUrl, { mode: 'cors' });
+    const blob = await response.blob();
+    const mimeType = blob.type || 'image/jpeg';
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    const data = btoa(binary);
+    return { mimeType, data };
+}
+
+export async function generateAltText(item: { name: string; previewUrl: string }, existingAltText: string): Promise<string> {
     if (existingAltText) {
         return existingAltText;
     }
+
+    const imageData = await imageUrlToBase64(item.previewUrl);
 
     const response = await fetch(GEMINI_API_URL, {
         method: 'POST',
@@ -18,7 +34,10 @@ export async function generateAltText(name: string, existingAltText: string): Pr
                 {
                     parts: [
                         {
-                            text: `Generate a concise, descriptive ALT text for an image named "${name}". The ALT text should be under 125 characters, describe what the image likely contains based on its filename, and be suitable for web accessibility (WCAG compliant). Return only the ALT text, nothing else.`,
+                            text: `Generate a concise, descriptive ALT text for this image named "${item.name}". The ALT text should be under 125 characters, describe what the image contains based on its visual content, and be suitable for web accessibility (WCAG compliant). Return only the ALT text, nothing else.`,
+                        },
+                        {
+                            inlineData: imageData,
                         },
                     ],
                 },

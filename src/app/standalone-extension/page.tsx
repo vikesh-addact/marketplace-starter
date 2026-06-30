@@ -594,7 +594,7 @@ function StandaloneExtension() {
 
         if (action === 'alt') {
             try {
-                const altText = await generateAltText(item.name, item.altText);
+                const altText = await generateAltText({ name: item.name, previewUrl: item.thumbnailUrl }, item.altText);
                 await updateMediaAlt(client, appContext, item, altText);
                 setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
