@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
@@ -817,6 +817,7 @@ function PagesContextPanel() {
     const [isLoading, setIsLoading] = useState(true);
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
     const [actionMessage, setActionMessage] = useState('');
+    const hasReceivedSubscription = useRef(false);
 
     useEffect(() => {
         let unsubscribe: (() => void) | undefined;
@@ -842,6 +843,7 @@ function PagesContextPanel() {
                     subscribe: true,
                     onSuccess: (res) => {
                         console.log('Success retrieving pages.context:', res);
+                        hasReceivedSubscription.current = true;
                         setPagesContext(res);
                     },
                 });
@@ -898,6 +900,8 @@ function PagesContextPanel() {
                 return;
             }
 
+            let resolvedMedia: PageMediaItem[] = [];
+
             try {
                 const dataSourceMediaReferences = await fetchDataSourceMediaReferences(client, dataSourceReferences, pageInfo?.language, appContext);
                 const mediaReferences: MediaReference[] = [...pageMediaReferences, ...dataSourceMediaReferences];
@@ -917,15 +921,21 @@ function PagesContextPanel() {
                     }
                 }
 
-                const media = await fetchPageMediaDetails(client, mediaReferences, pageInfo?.language, appContext, mediaOrigin);
-                setPageMedia(media);
+                resolvedMedia = await fetchPageMediaDetails(client, mediaReferences, pageInfo?.language, appContext, mediaOrigin);
             } catch (mediaError) {
                 console.error('Error retrieving page media details:', mediaError);
-                setPageMedia(pageMediaReferences.map((reference) => mapReferenceToMedia(reference, appContext, mediaOrigin)));
-            } finally {
-                setActionStates({});
-                setIsLoading(false);
+                resolvedMedia = pageMediaReferences.map((reference) => mapReferenceToMedia(reference, appContext, mediaOrigin));
             }
+
+            setPageMedia(resolvedMedia);
+
+            if (resolvedMedia.length === 0 && !hasReceivedSubscription.current) {
+                setActionStates({});
+                return;
+            }
+
+            setActionStates({});
+            setIsLoading(false);
         }
 
         refreshPageMedia();
