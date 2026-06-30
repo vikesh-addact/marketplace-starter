@@ -817,7 +817,7 @@ function PagesContextPanel() {
     const [isLoading, setIsLoading] = useState(true);
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
     const [actionMessage, setActionMessage] = useState('');
-    const hasReceivedSubscription = useRef(false);
+    const noMediaTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     useEffect(() => {
         let unsubscribe: (() => void) | undefined;
@@ -843,7 +843,6 @@ function PagesContextPanel() {
                     subscribe: true,
                     onSuccess: (res) => {
                         console.log('Success retrieving pages.context:', res);
-                        hasReceivedSubscription.current = true;
                         setPagesContext(res);
                     },
                 });
@@ -929,9 +928,23 @@ function PagesContextPanel() {
 
             setPageMedia(resolvedMedia);
 
-            if (resolvedMedia.length === 0 && !hasReceivedSubscription.current) {
+            if (resolvedMedia.length === 0) {
+                if (noMediaTimerRef.current) {
+                    clearTimeout(noMediaTimerRef.current);
+                }
+
+                noMediaTimerRef.current = setTimeout(() => {
+                    noMediaTimerRef.current = undefined;
+                    setIsLoading(false);
+                }, 3000);
+
                 setActionStates({});
                 return;
+            }
+
+            if (noMediaTimerRef.current) {
+                clearTimeout(noMediaTimerRef.current);
+                noMediaTimerRef.current = undefined;
             }
 
             setActionStates({});
@@ -940,6 +953,14 @@ function PagesContextPanel() {
 
         refreshPageMedia();
     }, [appContext, client, hostState, pagesContext]);
+
+    useEffect(() => {
+        return () => {
+            if (noMediaTimerRef.current) {
+                clearTimeout(noMediaTimerRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (error) {
