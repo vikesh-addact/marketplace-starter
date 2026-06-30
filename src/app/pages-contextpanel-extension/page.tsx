@@ -117,14 +117,14 @@ function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = 
         return url;
     }
 
-    const normalizedUrl = url.replace('/-/media/', '/-/jssmedia/');
+    const edgeUrl = url.replace('/-/media/', '/media').replace('/-/jssmedia/', '/media');
 
     if (url.startsWith('/')) {
-        return mediaOrigin ? `${mediaOrigin}${normalizedUrl}` : normalizedUrl;
+        return mediaOrigin ? `${mediaOrigin}${edgeUrl}` : edgeUrl;
     }
 
     const baseUrl = appContext?.url?.replace(/\/$/, '');
-    return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${normalizedUrl}` : normalizedUrl;
+    return baseUrl && /^https?:\/\//i.test(baseUrl) ? `${baseUrl}/${edgeUrl}` : edgeUrl;
 }
 
 function mediaPathToUrlWithOrigin(path: string, extension: string, origin: string) {
@@ -147,7 +147,7 @@ function mediaPathToUrlWithOrigin(path: string, extension: string, origin: strin
         return '';
     }
 
-    return `${origin}/-/jssmedia/${relativePath}${extensionSuffix}`;
+    return `${origin}/media/${relativePath}${extensionSuffix}`;
 }
 
 function getMediaOrigin(references: MediaReference[]) {
@@ -161,6 +161,31 @@ function getMediaOrigin(references: MediaReference[]) {
         return new URL(absoluteMediaUrl).origin;
     } catch {
         return '';
+    }
+}
+
+function getEdgeCdnHost(hostState?: HostStateContext, sitecoreContextId?: string) {
+    const hostUrl = hostState?.xmCloudTenantInfo?.url;
+
+    if (!hostUrl) {
+        return '';
+    }
+
+    try {
+        const url = new URL(hostUrl);
+        const hostname = url.hostname;
+
+        if (!hostname.startsWith('xmc-') || !hostname.endsWith('.sitecorecloud.io')) {
+            return url.origin;
+        }
+
+        const prefix = hostname.replace(/^xmc-/, '').replace(/\.sitecorecloud\.io$/, '');
+        const cleanId = (sitecoreContextId || '').replace(/[{}-]/g, '').toLowerCase();
+        const hash = cleanId.slice(-4);
+
+        return `https://edge.sitecorecloud.io/${prefix}${hash ? '-' + hash : ''}`;
+    } catch {
+        return hostUrl.replace(/\/$/, '');
     }
 }
 
@@ -889,7 +914,7 @@ function PagesContextPanel() {
             const pageMediaReferences = extractPageMediaReferences(pagesContext);
             const dataSourceReferences = extractDataSourceReferences(pagesContext);
             const sitecoreContextId = getSitecoreContextId(appContext);
-            const mediaOrigin = getHostMediaOrigin(hostState);
+            const mediaOrigin = getEdgeCdnHost(hostState, sitecoreContextId) || getHostMediaOrigin(hostState);
 
             if (!sitecoreContextId) {
                 console.error('No Sitecore context ID was found in application.context resourceAccess/resources.');
