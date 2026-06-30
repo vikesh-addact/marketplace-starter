@@ -3,17 +3,13 @@ const GEMINI_MODEL = 'gemini-flash-latest';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 async function imageUrlToBase64(imageUrl: string): Promise<{ mimeType: string; data: string }> {
-    const response = await fetch(imageUrl, { mode: 'cors' });
-    const blob = await response.blob();
-    const mimeType = blob.type || 'image/jpeg';
-    const buffer = await blob.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
+    const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+    const response = await fetch(proxyUrl);
+    if (!response.ok) {
+        throw new Error(`Image proxy returned ${response.status}`);
     }
-    const data = btoa(binary);
-    return { mimeType, data };
+    const result = await response.json();
+    return { mimeType: result.mimeType, data: result.data };
 }
 
 export async function generateAltText(item: { name: string; previewUrl: string }, existingAltText: string): Promise<string> {
