@@ -670,7 +670,6 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
               itemId
               name
               path
-              url
               ${fieldQueries}
             }
           `,
