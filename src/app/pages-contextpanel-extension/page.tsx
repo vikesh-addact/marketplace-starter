@@ -458,8 +458,6 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
 
             const getField = (name: string) => item[name.toLowerCase()]?.value ?? '';
 
-            console.log('GraphQL media item URL:', item.url);
-
             const previewUrl = toMediaUrl(
                 item.url || reference.url || mediaPathToUrlWithOrigin(item.path ?? '', getField('Extension'), mediaOrigin),
                 appContext,
@@ -697,7 +695,6 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
               itemId
               name
               path
-              url
               ${fieldQueries}
             }
           `,
@@ -713,7 +710,6 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
         },
     });
 
-    console.log('GraphQL media items response:', result);
     return mapGraphqlMediaDetails(result, references, appContext, mediaOrigin);
 }
 
