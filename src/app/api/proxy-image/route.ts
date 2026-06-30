@@ -17,7 +17,11 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: `Failed to fetch image: ${response.status}` }, { status: response.status });
     }
 
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const contentType = response.headers.get('content-type') || '';
+
+    if (!contentType.startsWith('image/')) {
+        return NextResponse.json({ error: `Response is not an image: ${contentType}` }, { status: 415 });
+    }
     const buffer = await response.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     let binary = '';
