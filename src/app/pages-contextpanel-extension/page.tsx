@@ -6,6 +6,7 @@ import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-mark
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText } from '@/src/utils/generateAltText';
 import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
+import { loadMediaAsBlobUrl } from '@/src/utils/loadMediaAsBlobUrl';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
@@ -808,6 +809,17 @@ function ActionButton({
     );
 }
 
+function PreviewImage({ item }: { item: PageMediaItem }) {
+    const [blobUrl, setBlobUrl] = useState(item.previewUrl);
+
+    useEffect(() => {
+        loadMediaAsBlobUrl(item.previewUrl).then(setBlobUrl).catch(() => {});
+    }, [item.previewUrl]);
+
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img alt={item.altText || item.name} src={blobUrl} style={styles.preview} />;
+}
+
 function PagesContextPanel() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const [pagesContext, setPagesContext] = useState<PagesContext>();
@@ -1063,8 +1075,7 @@ function PagesContextPanel() {
                             {analyzedMedia.map((item) => (
                                 <article key={item.id} style={styles.mediaCard}>
                                     <div style={styles.mediaTop}>
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img alt={item.altText || item.name} src={item.previewUrl} style={styles.preview} />
+                                        <PreviewImage item={item} />
                                         <div style={styles.mediaInfo}>
                                             <strong>{item.name}</strong>
                                             <span style={styles.meta}>{item.source}</span>

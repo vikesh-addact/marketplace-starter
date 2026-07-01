@@ -6,6 +6,7 @@ import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/cl
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText } from '@/src/utils/generateAltText';
 import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
+import { loadMediaAsBlobUrl } from '@/src/utils/loadMediaAsBlobUrl';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
@@ -382,6 +383,17 @@ function ActionButton({ label, state, onClick, disabled = false }: { label: stri
     );
 }
 
+function ThumbnailCell({ item }: { item: MediaItem }) {
+    const [blobUrl, setBlobUrl] = useState(item.thumbnailUrl);
+
+    useEffect(() => {
+        loadMediaAsBlobUrl(item.thumbnailUrl).then(setBlobUrl).catch(() => {});
+    }, [item.thumbnailUrl]);
+
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img alt={item.altText || item.name} src={blobUrl} style={styles.thumbnail} />;
+}
+
 function StandaloneExtension() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const [appContext, setAppContext] = useState<ApplicationContext>();
@@ -704,8 +716,7 @@ function StandaloneExtension() {
                                         <tr key={item.id} style={styles.tr}>
                                             <td style={styles.td}>
                                                 <div style={styles.mediaCell}>
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img alt={item.altText || item.name} src={item.thumbnailUrl} style={styles.thumbnail} />
+                                                    <ThumbnailCell item={item} />
                                                     <div>
                                                         <strong>{item.name}</strong>
                                                         <span style={styles.path}>{item.path}</span>
