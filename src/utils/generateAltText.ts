@@ -18,13 +18,13 @@ export async function generateAltText(name: string, existingAltText: string): Pr
                 {
                     parts: [
                         {
-                            text: `Generate a concise, descriptive ALT text for an image named "${name}". The ALT text should be under 125 characters, describe what the image likely contains based on its filename, and be suitable for web accessibility (WCAG compliant). Return only the ALT text, nothing else.`,
+                            text: `Generate descriptive ALT text (2 to 4 words only) for an image named "${name}". Based on the filename, describe what the image likely contains. Return only the ALT text, nothing else.`,
                         },
                     ],
                 },
             ],
             generationConfig: {
-                maxOutputTokens: 50,
+                maxOutputTokens: 30,
                 temperature: 0.3,
             },
         }),
