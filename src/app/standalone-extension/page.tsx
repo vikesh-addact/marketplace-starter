@@ -341,6 +341,101 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         .filter((item) => ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format) && !item.name.toLowerCase().startsWith('thumbnail'));
 }
 
+const MEDIA_PAGE_SIZE = 250;
+const MEDIA_FETCH_CONCURRENCY = 5;
+
+function buildMediaSearchQuery(pageSize: number, skip: number) {
+    return `
+    query MediaOptimizerItems {
+      search(
+        query: {
+          index: "sitecore_master_index"
+          latestVersionOnly: true
+          paging: { pageSize: ${pageSize}, skip: ${skip} }
+          searchStatement: {
+            criteria: [
+              { field: "_path" value: "90ae357f61714ea9808c5600b678f726" criteriaType: EXACT operator: MUST }
+              { field: "_templatename" value: "Image" criteriaType: EXACT operator: SHOULD }
+              { field: "_templatename" value: "Jpeg" criteriaType: EXACT operator: SHOULD }
+              { field: "_templatename" value: "Png" criteriaType: EXACT operator: SHOULD }
+              { field: "_templatename" value: "WebP" criteriaType: EXACT operator: SHOULD }
+              { field: "_templatename" value: "Svg" criteriaType: EXACT operator: SHOULD }
+            ]
+          }
+        }
+      ) {
+        results {
+          itemId
+          name
+          path
+          templateName
+
+          innerItem {
+            url
+
+            ${MEDIA_DETAIL_FIELDS.map(
+                (f) => `${f.toLowerCase()}: field(name: "${f}") {
+              value
+            }`,
+            ).join('\n            ')}
+          }
+        }
+      }
+    }
+  `;
+}
+
+function getSearchTotalCount(payload: unknown): number {
+    const data = payload as {
+        data?: {
+            search?: { totalCount?: number };
+            data?: { search?: { totalCount?: number } };
+        };
+    };
+    return data.data?.data?.search?.totalCount ?? data.data?.search?.totalCount ?? 0;
+}
+
+function fetchMediaPage(client: ClientSDK, appContext: ApplicationContext | undefined, pageSize: number, skip: number) {
+    return client.mutate('xmc.authoring.graphql', {
+        params: {
+            query: getGraphqlQueryParams(appContext),
+            body: { query: buildMediaSearchQuery(pageSize, skip) },
+        },
+    });
+}
+
+async function loadAllMedia(
+    client: ClientSDK,
+    appContext: ApplicationContext | undefined,
+    mediaOrigin: string,
+): Promise<MediaItem[]> {
+    const countResult = await fetchMediaPage(client, appContext, 1, 0);
+    const totalCount = getSearchTotalCount(countResult);
+    if (totalCount <= 0) {
+        return [];
+    }
+
+    const totalPages = Math.ceil(totalCount / MEDIA_PAGE_SIZE);
+    const pageSkips = Array.from({ length: totalPages }, (_, index) => index * MEDIA_PAGE_SIZE);
+    const items: MediaItem[] = [];
+
+    for (let start = 0; start < pageSkips.length; start += MEDIA_FETCH_CONCURRENCY) {
+        const batch = pageSkips.slice(start, start + MEDIA_FETCH_CONCURRENCY);
+        const batchResults = await Promise.all(batch.map((skip) => fetchMediaPage(client, appContext, MEDIA_PAGE_SIZE, skip)));
+        for (const result of batchResults) {
+            items.push(...mapGraphqlMediaItems(result, appContext, mediaOrigin));
+        }
+    }
+
+    const deduped = new Map<string, MediaItem>();
+    for (const item of items) {
+        if (!deduped.has(item.id)) {
+            deduped.set(item.id, item);
+        }
+    }
+    return [...deduped.values()];
+}
+
 async function mockOptimizeMedia(item: MediaItem, action: MediaAction): Promise<MediaItem> {
     await new Promise((resolve) => setTimeout(resolve, 450));
 
@@ -451,83 +546,7 @@ function StandaloneExtensionApp() {
 
             try {
                 setIsLoadingMedia(true);
-                const mediaResult = await client.mutate('xmc.authoring.graphql', {
-                    params: {
-                        query: getGraphqlQueryParams(loadedAppContext),
-                        body: {
-                            query: `
-                        query MediaOptimizerItems {
-                        search(
-                            query: {
-                            index: "sitecore_master_index"
-                            latestVersionOnly: true
-                            paging: { pageSize: 1500 }
-                            searchStatement: {
-                                criteria: [
-                                {
-                                    field: "_path"
-                                    value: "90ae357f61714ea9808c5600b678f726"
-                                    criteriaType: EXACT
-                                    operator: MUST
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Image"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Jpeg"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Png"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "WebP"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                {
-                                    field: "_templatename"
-                                    value: "Svg"
-                                    criteriaType: EXACT
-                                    operator: SHOULD
-                                }
-                                ]
-                            }
-                            }
-                        ) {
-                            results {
-                            itemId
-                            name
-                            path
-                            templateName
-
-                            innerItem {
-                                url
-
-                                ${MEDIA_DETAIL_FIELDS.map(
-                                    (f) => `${f.toLowerCase()}: field(name: "${f}") {
-                                    value
-                                }`,
-                                ).join('\n                                ')}
-                            }
-                            }
-                        }
-                        }
-                        `,
-                        },
-                    },
-                });
-
-                const items = mapGraphqlMediaItems(mediaResult, loadedAppContext, hostOrigin);
+                const items = await loadAllMedia(client, loadedAppContext, hostOrigin);
                 setMediaItems(items);
                 setMediaLoadMessage(items.length > 0 ? '' : 'No media items were returned from the project media library.');
             } catch (mediaError) {
