@@ -461,7 +461,7 @@ function StandaloneExtensionApp() {
                             query: {
                             index: "sitecore_master_index"
                             latestVersionOnly: true
-                            paging: { pageSize: 1500 }
+                            paging: { pageSize: 5000 }
                             searchStatement: {
                                 criteria: [
                                 {
