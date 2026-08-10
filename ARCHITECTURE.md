@@ -143,7 +143,8 @@ No global state library. Each page manages its own state with:
 
 ### Standalone (`standalone-extension` — Media Optimizer)
 - Full media auditing dashboard
-- Searches entire Media Library via GraphQL `search` mutation with offset pagination: a count query (`pageSize: 1`) reads `totalCount`, then all pages are fetched in parallel batches (`pageSize: 250`, `skip` offsets, concurrency 5) and merged/deduped by item ID — no 1500-item cap; falls back to a single `pageSize: 1000` query if `totalCount` is not exposed
+- Searches entire Media Library via GraphQL `search` mutation with offset pagination: the first page (`pageSize: 1500`, matching the legacy single-query fast path) and a cheap count query (`pageSize: 1`) run in parallel; if `totalCount` exceeds the first page, the remainder is fetched in parallel batches (`pageSize: 500`, `skip` offsets, concurrency 6) and merged/deduped by item ID — no hard-coded item cap. Falls back to sequential 1500-item chunks if `totalCount` is not exposed
+- Thumbnails load lazily (`loading="lazy"`, `decoding="async"`) so only visible images fetch
 - Computes optimization score per item (ALT text, file size, aspect ratio, format)
 - Supports filtering and per-item actions (generate ALT, copy path, open editor)
 

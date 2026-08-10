@@ -341,9 +341,9 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         .filter((item) => ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format) && !item.name.toLowerCase().startsWith('thumbnail'));
 }
 
-const MEDIA_PAGE_SIZE = 250;
-const MEDIA_FETCH_CONCURRENCY = 5;
-const MEDIA_FALLBACK_PAGE_SIZE = 1000;
+const MEDIA_MAX_PAGE_SIZE = 1500;
+const MEDIA_PAGE_SIZE = 500;
+const MEDIA_FETCH_CONCURRENCY = 6;
 
 function buildMediaSearchQuery(pageSize: number, skip: number) {
     return `
@@ -406,26 +406,48 @@ function fetchMediaPage(client: ClientSDK, appContext: ApplicationContext | unde
     });
 }
 
+function dedupeMediaItems(items: MediaItem[]) {
+    const deduped = new Map<string, MediaItem>();
+    for (const item of items) {
+        if (!deduped.has(item.id)) {
+            deduped.set(item.id, item);
+        }
+    }
+    return [...deduped.values()];
+}
+
 async function loadAllMedia(
     client: ClientSDK,
     appContext: ApplicationContext | undefined,
     mediaOrigin: string,
 ): Promise<MediaItem[]> {
-    const countResult = await fetchMediaPage(client, appContext, 1, 0);
+    const [countResult, firstPageResult] = await Promise.all([
+        fetchMediaPage(client, appContext, 1, 0),
+        fetchMediaPage(client, appContext, MEDIA_MAX_PAGE_SIZE, 0),
+    ]);
+
+    const firstPageItems = mapGraphqlMediaItems(firstPageResult, appContext, mediaOrigin);
     const totalCount = getSearchTotalCount(countResult);
+
+    if (totalCount == null) {
+        if (firstPageItems.length < MEDIA_MAX_PAGE_SIZE) {
+            return firstPageItems;
+        }
+        return loadRemainderSequential(client, appContext, mediaOrigin, firstPageItems);
+    }
 
     if (totalCount === 0) {
         return [];
     }
 
-    if (totalCount == null) {
-        const fallbackResult = await fetchMediaPage(client, appContext, MEDIA_FALLBACK_PAGE_SIZE, 0);
-        return mapGraphqlMediaItems(fallbackResult, appContext, mediaOrigin);
+    if (totalCount <= MEDIA_MAX_PAGE_SIZE) {
+        return firstPageItems;
     }
 
-    const totalPages = Math.ceil(totalCount / MEDIA_PAGE_SIZE);
-    const pageSkips = Array.from({ length: totalPages }, (_, index) => index * MEDIA_PAGE_SIZE);
-    const items: MediaItem[] = [];
+    const remaining = totalCount - MEDIA_MAX_PAGE_SIZE;
+    const totalPages = Math.ceil(remaining / MEDIA_PAGE_SIZE);
+    const pageSkips = Array.from({ length: totalPages }, (_, index) => MEDIA_MAX_PAGE_SIZE + index * MEDIA_PAGE_SIZE);
+    const items: MediaItem[] = [...firstPageItems];
 
     for (let start = 0; start < pageSkips.length; start += MEDIA_FETCH_CONCURRENCY) {
         const batch = pageSkips.slice(start, start + MEDIA_FETCH_CONCURRENCY);
@@ -435,13 +457,28 @@ async function loadAllMedia(
         }
     }
 
-    const deduped = new Map<string, MediaItem>();
-    for (const item of items) {
-        if (!deduped.has(item.id)) {
-            deduped.set(item.id, item);
-        }
+    return dedupeMediaItems(items);
+}
+
+async function loadRemainderSequential(
+    client: ClientSDK,
+    appContext: ApplicationContext | undefined,
+    mediaOrigin: string,
+    firstPageItems: MediaItem[],
+): Promise<MediaItem[]> {
+    const items: MediaItem[] = [...firstPageItems];
+    let skip = MEDIA_MAX_PAGE_SIZE;
+    let fetched = firstPageItems.length;
+
+    while (fetched >= MEDIA_MAX_PAGE_SIZE) {
+        const result = await fetchMediaPage(client, appContext, MEDIA_MAX_PAGE_SIZE, skip);
+        const pageItems = mapGraphqlMediaItems(result, appContext, mediaOrigin);
+        fetched = pageItems.length;
+        items.push(...pageItems);
+        skip += MEDIA_MAX_PAGE_SIZE;
     }
-    return [...deduped.values()];
+
+    return dedupeMediaItems(items);
 }
 
 async function mockOptimizeMedia(item: MediaItem, action: MediaAction): Promise<MediaItem> {
@@ -742,7 +779,7 @@ function StandaloneExtensionApp() {
                                             <td style={styles.td}>
                                                 <div style={styles.mediaCell}>
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img alt={item.altText || item.name} src={item.thumbnailUrl} style={styles.thumbnail} />
+                                                    <img alt={item.altText || item.name} decoding="async" loading="lazy" src={item.thumbnailUrl} style={styles.thumbnail} />
                                                     <div>
                                                         <strong>{item.name}</strong>
                                                         <span style={styles.path}>{item.path}</span>
