@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
-import { generateAltText } from '@/src/utils/generateAltText';
+import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
@@ -811,7 +811,7 @@ function ActionButton({
 
 function PagesContextPanelApp() {
     const { client, error, isInitialized } = useMarketplaceClient();
-    const { apiKey, clearSavedKey, hasStoredKey } = useApiKey();
+    const { apiKey, mode, clearSavedKey, hasStoredKey } = useApiKey();
     const [pagesContext, setPagesContext] = useState<PagesContext>();
     const [appContext, setAppContext] = useState<ApplicationContext>();
     const [hostState, setHostState] = useState<HostStateContext>();
@@ -1019,7 +1019,7 @@ function PagesContextPanelApp() {
         setActionMessage('');
 
         try {
-            const altText = await generateAltText(item.name, item.altText, apiKey);
+            const altText = mode === 'api' ? await generateAltText(item.name, item.altText, apiKey) : generateStaticAltText(item.name);
             await updateMediaAlt(client, appContext, item, altText);
             setPageMedia((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
             setActionStates((current) => ({ ...current, [actionKey]: 'done' }));

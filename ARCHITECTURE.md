@@ -77,8 +77,8 @@ Page mounts
 - `buildMediaDetailQuery()` — reusable GraphQL fragment builder
 
 ### `generateAltText.ts`
-- Calls Google Gemini (`gemini-2.5-flash-lite`) via REST
-- Returns existing ALT text if already present (no-op)
+- `generateAltText(name, existingAltText, apiKey)` — calls Google Gemini (`gemini-2.5-flash-lite`) via REST; returns existing ALT text if already present (no-op)
+- `generateStaticAltText(name)` — synchronous, API-key-free ALT generation; humanizes the item name (strips extension, splits `camelCase`/`kebab`/`snake`, drops leading numeric IDs) and returns `Image of <name>`
 - Takes the caller-supplied Gemini API key (never read from the environment or bundled)
 - The key is sent only in the `x-goog-api-key` request header to Google; it is never logged, put in URL parameters, or included in errors/analytics
 
@@ -89,10 +89,12 @@ Page mounts
 
 ### `ApiKeyGate.tsx`
 - Shared gate wrapping both ALT-generating pages (Standalone and Pages Context Panel)
-- Shows a form when no API key is present: masked input + "Remember API key on this device" checkbox with a privacy warning
+- Shows a setup form when no generation method is chosen:
+  - **API key path** — masked input + "Remember API key on this device" checkbox with a privacy warning
+  - **Static path** — "Don't have an API key — use static ALT generation" (uses `generateStaticAltText`, nothing is stored or sent)
 - Unchecked = key kept in memory for the session only and re-asked on the next launch
 - Checked = key persisted to `localStorage` for this device
-- Exposes `useApiKey()` (`apiKey`, `hasStoredKey`, `clearSavedKey`) and a "Clear saved API key" control in each page's header
+- Exposes `useApiKey()` (`mode` = `'api' | 'static'`, `apiKey`, `hasStoredKey`, `clearSavedKey`) and a "Clear saved API key" control in each page's header
 
 ## SDK Communication
 

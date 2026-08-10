@@ -2,6 +2,29 @@ const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const TIMEOUT_MS = 10_000;
 
+function humanizeMediaName(name: string): string {
+    const withoutExtension = name.replace(/\.[a-zA-Z0-9]{2,5}$/, '');
+    const spaced = withoutExtension
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .replace(/[/\\]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    let tokens = spaced.split(' ').filter((token) => token.length > 0);
+    while (tokens.length > 0 && /^\d+$/.test(tokens[0])) {
+        tokens = tokens.slice(1);
+    }
+
+    const phrase = tokens.join(' ');
+    return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+export function generateStaticAltText(name: string): string {
+    const cleaned = humanizeMediaName(name);
+    return cleaned ? `Image of ${cleaned}` : 'Media image';
+}
+
 export async function generateAltText(name: string, existingAltText: string, apiKey: string): Promise<string> {
     if (existingAltText) {
         return existingAltText;

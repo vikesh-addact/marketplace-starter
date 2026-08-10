@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
-import { generateAltText } from '@/src/utils/generateAltText';
+import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
@@ -385,7 +385,7 @@ function ActionButton({ label, state, onClick, disabled = false }: { label: stri
 
 function StandaloneExtensionApp() {
     const { client, error, isInitialized } = useMarketplaceClient();
-    const { apiKey, clearSavedKey, hasStoredKey } = useApiKey();
+    const { apiKey, mode, clearSavedKey, hasStoredKey } = useApiKey();
     const [appContext, setAppContext] = useState<ApplicationContext>();
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
@@ -597,7 +597,7 @@ function StandaloneExtensionApp() {
 
         if (action === 'alt') {
             try {
-                const altText = await generateAltText(item.name, item.altText, apiKey);
+                const altText = mode === 'api' ? await generateAltText(item.name, item.altText, apiKey) : generateStaticAltText(item.name);
                 await updateMediaAlt(client, appContext, item, altText);
                 setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));

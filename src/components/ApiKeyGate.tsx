@@ -4,7 +4,10 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { clearStoredApiKey, loadStoredApiKey, storeApiKey } from '@/src/utils/apiKey';
 
+type AltGenerationMode = 'api' | 'static';
+
 interface ApiKeyContextValue {
+    mode: AltGenerationMode;
     apiKey: string;
     hasStoredKey: boolean;
     clearSavedKey: () => void;
@@ -23,11 +26,14 @@ export function useApiKey(): ApiKeyContextValue {
 export function ApiKeyGate({ children }: { children: ReactNode }) {
     const [storedKey, setStoredKey] = useState<string | null>(() => loadStoredApiKey());
     const [sessionKey, setSessionKey] = useState<string | null>(null);
+    const [staticMode, setStaticMode] = useState(false);
 
     const apiKey = storedKey ?? sessionKey;
+    const mode: AltGenerationMode = staticMode ? 'static' : apiKey ? 'api' : 'api';
 
     const saveKey = useCallback((key: string, remember: boolean) => {
         const trimmed = key.trim();
+        setStaticMode(false);
         if (remember) {
             storeApiKey(trimmed);
             setStoredKey(trimmed);
@@ -36,25 +42,31 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
         }
     }, []);
 
+    const useStaticGeneration = useCallback(() => {
+        setStaticMode(true);
+        setSessionKey(null);
+    }, []);
+
     const clearSavedKey = useCallback(() => {
         clearStoredApiKey();
         setStoredKey(null);
         setSessionKey(null);
+        setStaticMode(false);
     }, []);
 
     const contextValue = useMemo(
-        () => ({ apiKey: apiKey ?? '', hasStoredKey: storedKey !== null, clearSavedKey }),
-        [apiKey, storedKey, clearSavedKey],
+        () => ({ mode, apiKey: apiKey ?? '', hasStoredKey: storedKey !== null, clearSavedKey }),
+        [mode, apiKey, storedKey, clearSavedKey],
     );
 
-    if (!apiKey) {
-        return <ApiKeyPrompt onSave={saveKey} />;
+    if (!apiKey && !staticMode) {
+        return <ApiKeyPrompt onSave={saveKey} onUseStatic={useStaticGeneration} />;
     }
 
     return <ApiKeyContext.Provider value={contextValue}>{children}</ApiKeyContext.Provider>;
 }
 
-function ApiKeyPrompt({ onSave }: { onSave: (key: string, remember: boolean) => void }) {
+function ApiKeyPrompt({ onSave, onUseStatic }: { onSave: (key: string, remember: boolean) => void; onUseStatic: () => void }) {
     const [value, setValue] = useState('');
     const [remember, setRemember] = useState(false);
     const [error, setError] = useState('');
@@ -73,10 +85,10 @@ function ApiKeyPrompt({ onSave }: { onSave: (key: string, remember: boolean) => 
     return (
         <div style={styles.wrap}>
             <form onSubmit={handleSubmit} style={styles.card}>
-                <span style={styles.badge}>API key required</span>
-                <h1 style={styles.title}>Add your Gemini API key</h1>
+                <span style={styles.badge}>ALT generation setup</span>
+                <h1 style={styles.title}>Generate ALT text for your images</h1>
                 <p style={styles.copy}>
-                    Media Optimizer uses Google Gemini to generate descriptive ALT text for your images. Enter your Gemini API key (free or paid) to enable ALT generation.
+                    Media Optimizer creates descriptive ALT text for your images. Provide a Gemini API key (free or paid) for AI-generated text, or use the built-in static generator that derives text from the media item name.
                 </p>
 
                 <label style={styles.label} htmlFor="gemini-api-key">
@@ -107,10 +119,20 @@ function ApiKeyPrompt({ onSave }: { onSave: (key: string, remember: boolean) => 
                 {error && <p style={styles.error}>{error}</p>}
 
                 <button style={styles.button} type="submit">
-                    Continue
+                    Continue with API key
+                </button>
+
+                <div style={styles.divider}>
+                    <span style={styles.dividerLine} />
+                    <span style={styles.dividerText}>or</span>
+                    <span style={styles.dividerLine} />
+                </div>
+
+                <button onClick={onUseStatic} style={styles.staticButton} type="button">
+                    Don&apos;t have an API key — use static ALT generation
                 </button>
                 <p style={styles.footnote}>
-                    Your API key is sent only to Google Gemini for these requests. It is never logged, stored on our servers, or included in analytics, telemetry, or URL parameters.
+                    Static ALT text is derived from the media item&apos;s name (for example, <em>Skeidar Fana black and white</em> becomes <em>Image of Skeidar Fana black and white</em>). No API key is stored or sent anywhere.
                 </p>
             </form>
         </div>
@@ -209,6 +231,31 @@ const styles: Record<string, CSSProperties> = {
         fontSize: '14px',
         fontWeight: 600,
         marginTop: '6px',
+        padding: '12px',
+    },
+    divider: {
+        alignItems: 'center',
+        display: 'flex',
+        gap: '12px',
+        marginTop: '4px',
+    },
+    dividerLine: {
+        background: '#e2e8f0',
+        flex: 1,
+        height: '1px',
+    },
+    dividerText: {
+        color: '#94a3b8',
+        fontSize: '13px',
+    },
+    staticButton: {
+        background: '#ffffff',
+        border: '1px solid #cbd5e1',
+        borderRadius: '8px',
+        color: '#334155',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 600,
         padding: '12px',
     },
     footnote: {
