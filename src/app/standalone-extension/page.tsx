@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react';
 import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText } from '@/src/utils/generateAltText';
+import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
@@ -120,11 +121,11 @@ function getMediaIssues(item: MediaItem): MediaIssue[] {
         issues.push('missingAlt');
     }
 
-    if (item.sizeKb > 500) {
+    if (item.sizeKb > 1024) {
         issues.push('largeImage');
     }
 
-    if (ratio > 0 && (ratio > 2.6 || ratio < 0.55)) {
+    if (ratio > 0 && (ratio > 2.0 || ratio < 0.75)) {
         issues.push('badAspectRatio');
     }
 
@@ -382,8 +383,9 @@ function ActionButton({ label, state, onClick, disabled = false }: { label: stri
     );
 }
 
-function StandaloneExtension() {
+function StandaloneExtensionApp() {
     const { client, error, isInitialized } = useMarketplaceClient();
+    const { apiKey, clearSavedKey, hasStoredKey } = useApiKey();
     const [appContext, setAppContext] = useState<ApplicationContext>();
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
@@ -424,10 +426,11 @@ function StandaloneExtension() {
                 });
                 console.log('listSites raw result:', sitesResult);
                 const raw = sitesResult.data ?? sitesResult;
-                const sites = Array.isArray(raw) ? raw : 
-                    Array.isArray((raw as Record<string, unknown>)?.data) 
-                        ? (raw as Record<string, unknown>).data as Array<Record<string, unknown>>
-                        : [];
+                const sites = Array.isArray(raw)
+                    ? raw
+                    : Array.isArray((raw as Record<string, unknown>)?.data)
+                      ? ((raw as Record<string, unknown>).data as Array<Record<string, unknown>>)
+                      : [];
                 if (sites.length > 0) {
                     const thumbnailUrl = (sites[0] as Record<string, unknown>)?.thumbnail as Record<string, unknown> | undefined;
                     const url = thumbnailUrl?.url as string | undefined;
@@ -594,7 +597,7 @@ function StandaloneExtension() {
 
         if (action === 'alt') {
             try {
-                const altText = await generateAltText(item.name, item.altText);
+                const altText = await generateAltText(item.name, item.altText, apiKey);
                 await updateMediaAlt(client, appContext, item, altText);
                 setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
                 setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
@@ -649,7 +652,14 @@ function StandaloneExtension() {
                     <h1 style={styles.title}>Media Optimizer Dashboard</h1>
                     <p style={styles.subtitle}>Audit media quality, accessibility, and delivery readiness across your library.</p>
                 </div>
-                <div style={styles.contextPill}>Installation {appContext?.installationId ?? 'pending'}</div>
+                <div style={styles.headerRight}>
+                    {hasStoredKey && (
+                        <button onClick={clearSavedKey} style={styles.clearKeyButton} title="Remove the saved Gemini API key from this browser." type="button">
+                            Clear saved API key
+                        </button>
+                    )}
+                    <div style={styles.contextPill}>Installation {appContext?.installationId ?? 'pending'}</div>
+                </div>
             </header>
 
             {!isInitialized || isLoadingMedia ? (
@@ -772,6 +782,14 @@ function StandaloneExtension() {
     );
 }
 
+function StandaloneExtension() {
+    return (
+        <ApiKeyGate>
+            <StandaloneExtensionApp />
+        </ApiKeyGate>
+    );
+}
+
 const styles: Record<string, CSSProperties> = {
     page: {
         background: '#f8fafc',
@@ -810,6 +828,23 @@ const styles: Record<string, CSSProperties> = {
         color: '#475569',
         fontSize: '13px',
         padding: '10px 14px',
+    },
+    headerRight: {
+        alignItems: 'center',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '10px',
+        justifyContent: 'flex-end',
+    },
+    clearKeyButton: {
+        background: '#ffffff',
+        border: '1px solid #fecaca',
+        borderRadius: '999px',
+        color: '#b91c1c',
+        cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: 600,
+        padding: '8px 12px',
     },
     summaryGrid: {
         display: 'grid',

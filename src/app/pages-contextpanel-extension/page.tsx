@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-marketplace-sdk/client';
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText } from '@/src/utils/generateAltText';
+import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
@@ -64,8 +65,8 @@ function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     const ratio = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
 
     if (!item.altText.trim()) issues.push('missingAlt');
-    if (item.sizeKb > 500 || item.width > 2000) issues.push('largeImage');
-    if (ratio > 0 && (ratio > 2.6 || ratio < 0.55)) issues.push('badAspectRatio');
+    if (item.sizeKb > 1024) issues.push('largeImage');
+    if (ratio > 0 && (ratio > 2.0 || ratio < 0.75)) issues.push('badAspectRatio');
     if (!supportedFormats.includes(item.format.toLowerCase())) issues.push('unsupportedFormat');
 
     return issues;
@@ -808,8 +809,9 @@ function ActionButton({
     );
 }
 
-function PagesContextPanel() {
+function PagesContextPanelApp() {
     const { client, error, isInitialized } = useMarketplaceClient();
+    const { apiKey, clearSavedKey, hasStoredKey } = useApiKey();
     const [pagesContext, setPagesContext] = useState<PagesContext>();
     const [appContext, setAppContext] = useState<ApplicationContext>();
     const [hostState, setHostState] = useState<HostStateContext>();
@@ -1017,7 +1019,7 @@ function PagesContextPanel() {
         setActionMessage('');
 
         try {
-            const altText = await generateAltText(item.name, item.altText);
+            const altText = await generateAltText(item.name, item.altText, apiKey);
             await updateMediaAlt(client, appContext, item, altText);
             setPageMedia((current) => current.map((mediaItem) => (mediaItem.id === itemId ? { ...mediaItem, altText } : mediaItem)));
             setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
@@ -1039,6 +1041,11 @@ function PagesContextPanel() {
                     <p style={styles.contextLine}>
                         {getCurrentPageInfo(pagesContext)?.path} / {getCurrentPageInfo(pagesContext)?.language}
                     </p>
+                )}
+                {hasStoredKey && (
+                    <button onClick={clearSavedKey} style={styles.clearKeyButton} title="Remove the saved Gemini API key from this browser." type="button">
+                        Clear saved API key
+                    </button>
                 )}
             </header>
 
@@ -1154,6 +1161,14 @@ function PagesContextPanel() {
     );
 }
 
+function PagesContextPanel() {
+    return (
+        <ApiKeyGate>
+            <PagesContextPanelApp />
+        </ApiKeyGate>
+    );
+}
+
 const styles: Record<string, CSSProperties> = {
     panel: {
         background: '#f8fafc',
@@ -1188,6 +1203,17 @@ const styles: Record<string, CSSProperties> = {
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
+    },
+    clearKeyButton: {
+        background: '#ffffff',
+        border: '1px solid #fecaca',
+        borderRadius: '999px',
+        color: '#b91c1c',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontWeight: 600,
+        marginTop: '8px',
+        padding: '6px 10px',
     },
     scoreCard: {
         alignItems: 'center',

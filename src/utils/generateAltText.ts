@@ -1,11 +1,14 @@
-const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '';
 const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const TIMEOUT_MS = 10_000;
 
-export async function generateAltText(name: string, existingAltText: string): Promise<string> {
+export async function generateAltText(name: string, existingAltText: string, apiKey: string): Promise<string> {
     if (existingAltText) {
         return existingAltText;
+    }
+
+    if (!apiKey) {
+        throw new Error('A Gemini API key is required to generate ALT text. Add one using the form shown when the app opens.');
     }
 
     const controller = new AbortController();
@@ -16,7 +19,7 @@ export async function generateAltText(name: string, existingAltText: string): Pr
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-goog-api-key': GEMINI_API_KEY,
+                'x-goog-api-key': apiKey,
             },
             body: JSON.stringify({
                 contents: [
