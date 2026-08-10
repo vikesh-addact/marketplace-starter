@@ -143,7 +143,9 @@ const styles: Record<string, CSSProperties> = {
     wrap: {
         alignItems: 'center',
         background: '#f8fafc',
+        color: '#172033',
         display: 'flex',
+        fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
         justifyContent: 'center',
         minHeight: '100vh',
         padding: '24px',
