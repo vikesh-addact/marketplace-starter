@@ -45,8 +45,7 @@ interface HostStateContext {
 }
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
-const DESKTOP_MIN_WIDTH = 1920;
-const DESKTOP_MIN_HEIGHT = 1080;
+const MIN_DIMENSION = 800;
 
 function buildContentEditorUrl(item: PageMediaItem, origin: string) {
     if (!origin) {
@@ -70,7 +69,7 @@ function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     if (item.sizeKb > 1024) issues.push('largeImage');
     if (ratio > 0 && (ratio > 2.0 || ratio < 0.75)) issues.push('badAspectRatio');
     if (!supportedFormats.includes(item.format.toLowerCase())) issues.push('unsupportedFormat');
-    if (item.width > 0 && item.height > 0 && (item.width < DESKTOP_MIN_WIDTH || item.height < DESKTOP_MIN_HEIGHT)) issues.push('lowResolution');
+    if (item.width > 0 && item.height > 0 && (item.width < MIN_DIMENSION || item.height < MIN_DIMENSION)) issues.push('lowResolution');
 
     return issues;
 }
@@ -417,13 +416,14 @@ function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], 
     type MediaDetailRecord = Record<string, { value?: string } | undefined>;
     const itemsById = unwrapGraphqlData(payload) as Record<
         string,
-        {
-            id?: string;
-            itemId?: string;
-            name?: string;
-            path?: string;
-            url?: string;
-        } & MediaDetailRecord | null
+        | ({
+              id?: string;
+              itemId?: string;
+              name?: string;
+              path?: string;
+              url?: string;
+          } & MediaDetailRecord)
+        | null
     >;
 
     return references
@@ -663,15 +663,13 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
         return references.filter(hasMediaLocator).map((reference) => mapReferenceToMedia(reference, appContext, mediaOrigin));
     }
 
-    const fieldQueries = MEDIA_DETAIL_FIELDS
-        .map((f) => `${f.toLowerCase()}: field(name: "${f}") { value }`)
-        .join('\n              ');
+    const fieldQueries = MEDIA_DETAIL_FIELDS.map((f) => `${f.toLowerCase()}: field(name: "${f}") { value }`).join('\n              ');
 
     const query = `
     query PageMediaInspectorItems {
       ${mediaIds
-            .map(
-                (reference) => `
+          .map(
+              (reference) => `
             media${reference.originalIndex}: item(where: { itemId: "{${reference.id}}" }) {
               itemId
               name
@@ -679,8 +677,8 @@ async function fetchPageMediaDetails(client: ClientSDK, references: MediaReferen
               ${fieldQueries}
             }
           `,
-            )
-            .join('\n')}
+          )
+          .join('\n')}
     }
   `;
 

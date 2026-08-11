@@ -24,8 +24,7 @@ interface MediaItem {
     path?: string;
 }
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
-const DESKTOP_MIN_WIDTH = 1920;
-const DESKTOP_MIN_HEIGHT = 1080;
+const MIN_DIMENSION = 800;
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
@@ -131,7 +130,7 @@ function getMediaIssues(item: MediaItem): MediaIssue[] {
         issues.push('badAspectRatio');
     }
 
-    if (item.width > 0 && item.height > 0 && (item.width < DESKTOP_MIN_WIDTH || item.height < DESKTOP_MIN_HEIGHT)) {
+    if (item.width > 0 && item.height > 0 && (item.width < MIN_DIMENSION || item.height < MIN_DIMENSION)) {
         issues.push('lowResolution');
     }
 
@@ -424,11 +423,7 @@ function dedupeMediaItems(items: MediaItem[]) {
     return [...deduped.values()];
 }
 
-async function loadAllMedia(
-    client: ClientSDK,
-    appContext: ApplicationContext | undefined,
-    mediaOrigin: string,
-): Promise<MediaItem[]> {
+async function loadAllMedia(client: ClientSDK, appContext: ApplicationContext | undefined, mediaOrigin: string): Promise<MediaItem[]> {
     const [countResult, firstPageResult] = await Promise.all([
         fetchMediaPage(client, appContext, 1, 0),
         fetchMediaPage(client, appContext, MEDIA_MAX_PAGE_SIZE, 0),
@@ -771,12 +766,7 @@ function StandaloneExtensionApp() {
                             <option value="missingAlt">Missing ALT</option>
                             <option value="largeImage">Large images</option>
                         </select>
-                        <select
-                            aria-label="Filter by file type"
-                            onChange={(event) => setFileType(event.target.value)}
-                            style={styles.select}
-                            value={fileType}
-                        >
+                        <select aria-label="Filter by file type" onChange={(event) => setFileType(event.target.value)} style={styles.select} value={fileType}>
                             <option value="all">All file types</option>
                             {availableFileTypes.map((format) => (
                                 <option key={format} value={format}>
@@ -807,7 +797,13 @@ function StandaloneExtensionApp() {
                                             <td style={styles.td}>
                                                 <div style={styles.mediaCell}>
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img alt={item.altText || item.name} decoding="async" loading="lazy" src={item.thumbnailUrl} style={styles.thumbnail} />
+                                                    <img
+                                                        alt={item.altText || item.name}
+                                                        decoding="async"
+                                                        loading="lazy"
+                                                        src={item.thumbnailUrl}
+                                                        style={styles.thumbnail}
+                                                    />
                                                     <div>
                                                         <strong>{item.name}</strong>
                                                         <span style={styles.path}>{item.path}</span>
