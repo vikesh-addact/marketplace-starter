@@ -6,7 +6,7 @@ import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/cl
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
-import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
+import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME, fetchAllItemFields } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
@@ -222,19 +222,29 @@ function getMediaParameters(item: MediaItem): MediaParameter[] {
 }
 
 function normalizeMediaIdForSearch(value: string) {
-    return value.replace(/[{}]/g, '').toUpperCase();
+    return value.replace(/[{}]/g, '').toLowerCase();
 }
 
-async function fetchMediaUsages(
+interface MediaUsageCandidate {
+    itemId: string;
+    name: string;
+    path: string;
+}
+
+function formatMediaGuidForSearch(item: MediaItem) {
+    const cleanId = item.id.replace(/[{}]/g, '').toLowerCase();
+    if (!/^[0-9a-f]{32}$/.test(cleanId)) {
+        return '';
+    }
+    return `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`;
+}
+
+async function searchMediaUsageCandidates(
     client: ClientSDK,
     appContext: ApplicationContext | undefined,
-    item: MediaItem,
-): Promise<MediaUsage[]> {
-    const cleanId = item.id.replace(/[{}]/g, '');
-    const bracedId = /^[0-9a-fA-F]{32}$/.test(cleanId)
-        ? `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`
-        : item.id;
-
+    cleanId: string,
+    bracedId: string,
+): Promise<MediaUsageCandidate[]> {
     const query = `
     query MediaUsages {
       search(
@@ -245,7 +255,7 @@ async function fetchMediaUsages(
           searchStatement: {
             criteria: [
               { field: "_content" value: "${bracedId}" criteriaType: CONTAINS operator: SHOULD }
-              { field: "_content" value: "${cleanId}" criteriaType: CONTAINS operator: SHOULD }
+              { field: "_content" value: "${cleanId}" criteriaType: SEARCH operator: SHOULD }
             ]
           }
         }
@@ -272,16 +282,73 @@ async function fetchMediaUsages(
         data?: { search?: { results?: Array<{ itemId?: string; name?: string; path?: string }> } };
     };
 
-    const results = data.data?.search?.results ?? [];
-    const targetId = normalizeMediaIdForSearch(item.id);
+    const seen = new Set<string>();
+    const candidates: MediaUsageCandidate[] = [];
 
-    return results
-        .filter((reference) => reference.itemId && normalizeMediaIdForSearch(reference.itemId) !== targetId)
-        .map((reference) => ({
-            id: reference.itemId ?? '',
+    for (const reference of data.data?.search?.results ?? []) {
+        const normalizedId = normalizeMediaIdForSearch(reference.itemId ?? '');
+        if (!normalizedId || seen.has(normalizedId)) {
+            continue;
+        }
+        seen.add(normalizedId);
+        candidates.push({
+            itemId: reference.itemId ?? '',
             name: reference.name ?? 'Unknown item',
             path: reference.path ?? '',
-        }));
+        });
+    }
+
+    return candidates;
+}
+
+async function verifyMediaUsageCandidate(
+    client: ClientSDK,
+    appContext: ApplicationContext | undefined,
+    candidate: MediaUsageCandidate,
+    cleanId: string,
+): Promise<MediaUsage | null> {
+    try {
+        const fields = await fetchAllItemFields(client, candidate.itemId.replace(/[{}]/g, ''), appContext);
+        const isReference = fields.some((field) => {
+            const value = field.value.toLowerCase().replace(/[{}\s-]/g, '');
+            return value.includes(cleanId);
+        });
+
+        if (!isReference) {
+            return null;
+        }
+
+        return { id: candidate.itemId, name: candidate.name, path: candidate.path };
+    } catch (verifyError) {
+        console.warn(`Unable to verify usage candidate "${candidate.name}":`, verifyError);
+        return null;
+    }
+}
+
+async function fetchMediaUsages(
+    client: ClientSDK,
+    appContext: ApplicationContext | undefined,
+    item: MediaItem,
+): Promise<MediaUsage[]> {
+    const cleanId = item.id.replace(/[{}]/g, '').toLowerCase();
+    const bracedId = formatMediaGuidForSearch(item);
+
+    if (!bracedId) {
+        return [];
+    }
+
+    const candidates = await searchMediaUsageCandidates(client, appContext, cleanId, bracedId);
+    const usages: MediaUsage[] = [];
+
+    for (let start = 0; start < candidates.length; start += 6) {
+        const batch = candidates.slice(start, start + 6);
+        const batchResults = await Promise.all(
+            batch.map((candidate) => verifyMediaUsageCandidate(client, appContext, candidate, cleanId)),
+        );
+        usages.push(...batchResults.filter((usage): usage is MediaUsage => usage !== null));
+    }
+
+    return usages;
 }
 
 function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext, mediaOriginOverride = ''): MediaItem[] {
