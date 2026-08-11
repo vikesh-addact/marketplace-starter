@@ -146,7 +146,7 @@ function getOptimizationScore(item: MediaItem) {
     let score = 100;
 
     if (issues.includes('missingAlt')) score -= 25;
-    if (issues.includes('largeImage')) score -= Math.min(30, Math.round((item.sizeKb - 500) / 35) + 12);
+    if (issues.includes('largeImage')) score -= 30;
     if (issues.includes('badAspectRatio')) score -= 15;
     if (issues.includes('unsupportedFormat')) score -= 20;
     if (issues.includes('lowResolution')) score -= 10;
