@@ -39,8 +39,13 @@ function getSitecoreContextId(appContext?: ApplicationContext) {
 
 function getEnvironmentLabel(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
-    const tenantName = resource?.tenantDisplayName ?? resource?.tenantName;
-    return tenantName || getSitecoreContextId(appContext);
+    const rawName = resource?.tenantDisplayName ?? resource?.tenantName ?? '';
+    const lastSegment = rawName
+        .split('/')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .pop();
+    return lastSegment || getSitecoreContextId(appContext);
 }
 
 function getGraphqlQueryParams(appContext?: ApplicationContext) {
@@ -775,7 +780,9 @@ function StandaloneExtensionApp() {
             <header style={styles.header}>
                 <div>
                     <span style={styles.eyebrow}>
-                        {siteName} · {getEnvironmentLabel(appContext)}
+                        {siteName || getEnvironmentLabel(appContext)
+                            ? `${siteName} · ${getEnvironmentLabel(appContext)}`
+                            : '\u00A0'}
                     </span>
                     <h1 style={styles.title}>Media Optimizer Dashboard</h1>
                     <p style={styles.subtitle}>Audit media quality, accessibility, and delivery readiness across your library.</p>
