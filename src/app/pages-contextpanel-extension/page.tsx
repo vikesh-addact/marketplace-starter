@@ -8,7 +8,7 @@ import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltT
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
-type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
+type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
 type ActionState = 'idle' | 'working' | 'done' | 'failed';
 
@@ -45,6 +45,8 @@ interface HostStateContext {
 }
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
+const DESKTOP_MIN_WIDTH = 1920;
+const DESKTOP_MIN_HEIGHT = 1080;
 
 function buildContentEditorUrl(item: PageMediaItem, origin: string) {
     if (!origin) {
@@ -68,6 +70,7 @@ function getMediaIssues(item: PageMediaItem): MediaIssue[] {
     if (item.sizeKb > 1024) issues.push('largeImage');
     if (ratio > 0 && (ratio > 2.0 || ratio < 0.75)) issues.push('badAspectRatio');
     if (!supportedFormats.includes(item.format.toLowerCase())) issues.push('unsupportedFormat');
+    if (item.width > 0 && item.height > 0 && (item.width < DESKTOP_MIN_WIDTH || item.height < DESKTOP_MIN_HEIGHT)) issues.push('lowResolution');
 
     return issues;
 }
@@ -80,6 +83,7 @@ function getOptimizationScore(item: PageMediaItem) {
     if (issues.includes('largeImage')) score -= Math.min(30, Math.round((item.sizeKb - 500) / 40) + 10);
     if (issues.includes('badAspectRatio')) score -= 15;
     if (issues.includes('unsupportedFormat')) score -= 20;
+    if (issues.includes('lowResolution')) score -= 10;
 
     return Math.max(0, Math.min(100, score));
 }
@@ -96,6 +100,7 @@ function issueLabel(issue: MediaIssue) {
         largeImage: 'Compress or resize this image',
         badAspectRatio: 'Review crop for this placement',
         unsupportedFormat: 'Convert to WebP or AVIF',
+        lowResolution: 'Below desktop resolution',
     };
 
     return labels[issue];

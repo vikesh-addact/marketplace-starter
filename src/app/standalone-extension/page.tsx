@@ -8,7 +8,7 @@ import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltT
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
-type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat';
+type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
 type ActionState = 'idle' | 'working' | 'done' | 'failed';
 
@@ -24,6 +24,8 @@ interface MediaItem {
     path?: string;
 }
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
+const DESKTOP_MIN_WIDTH = 1920;
+const DESKTOP_MIN_HEIGHT = 1080;
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
@@ -129,6 +131,10 @@ function getMediaIssues(item: MediaItem): MediaIssue[] {
         issues.push('badAspectRatio');
     }
 
+    if (item.width > 0 && item.height > 0 && (item.width < DESKTOP_MIN_WIDTH || item.height < DESKTOP_MIN_HEIGHT)) {
+        issues.push('lowResolution');
+    }
+
     if (!supportedFormats.includes(item.format.toLowerCase())) {
         issues.push('unsupportedFormat');
     }
@@ -144,6 +150,7 @@ function getOptimizationScore(item: MediaItem) {
     if (issues.includes('largeImage')) score -= Math.min(30, Math.round((item.sizeKb - 500) / 35) + 12);
     if (issues.includes('badAspectRatio')) score -= 15;
     if (issues.includes('unsupportedFormat')) score -= 20;
+    if (issues.includes('lowResolution')) score -= 10;
 
     return Math.max(0, Math.min(100, score));
 }
@@ -160,6 +167,7 @@ function formatIssue(issue: MediaIssue) {
         largeImage: 'Large image',
         badAspectRatio: 'Aspect ratio',
         unsupportedFormat: 'Format',
+        lowResolution: 'Low resolution',
     };
 
     return labels[issue];
@@ -533,6 +541,7 @@ function StandaloneExtensionApp() {
     const [mediaHostOrigin, setMediaHostOrigin] = useState('');
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<'all' | 'needsWork' | 'missingAlt' | 'largeImage'>('all');
+    const [fileType, setFileType] = useState('all');
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
 
     useEffect(() => {
@@ -622,6 +631,11 @@ function StandaloneExtensionApp() {
         [mediaItems],
     );
 
+    const availableFileTypes = useMemo(() => {
+        const formats = Array.from(new Set(analyzedItems.map((item) => item.format.toLowerCase())));
+        return formats.sort();
+    }, [analyzedItems]);
+
     const filteredItems = useMemo(() => {
         return analyzedItems.filter((item) => {
             const matchesSearch =
@@ -633,10 +647,11 @@ function StandaloneExtensionApp() {
                 (filter === 'needsWork' && item.issues.length > 0) ||
                 (filter === 'missingAlt' && item.issues.includes('missingAlt')) ||
                 (filter === 'largeImage' && item.issues.includes('largeImage'));
+            const matchesFileType = fileType === 'all' || item.format.toLowerCase() === fileType;
 
-            return matchesSearch && matchesFilter;
+            return matchesSearch && matchesFilter && matchesFileType;
         });
-    }, [analyzedItems, filter, search]);
+    }, [analyzedItems, filter, search, fileType]);
 
     const dashboardStats = useMemo(() => {
         const total = analyzedItems.length;
@@ -755,6 +770,19 @@ function StandaloneExtensionApp() {
                             <option value="needsWork">Needs work</option>
                             <option value="missingAlt">Missing ALT</option>
                             <option value="largeImage">Large images</option>
+                        </select>
+                        <select
+                            aria-label="Filter by file type"
+                            onChange={(event) => setFileType(event.target.value)}
+                            style={styles.select}
+                            value={fileType}
+                        >
+                            <option value="all">All file types</option>
+                            {availableFileTypes.map((format) => (
+                                <option key={format} value={format}>
+                                    {format.toUpperCase()}
+                                </option>
+                            ))}
                         </select>
                     </section>
 
