@@ -6,7 +6,7 @@ import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/cl
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
-import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME, fetchAllItemFields } from '@/src/utils/fieldTypes';
+import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
@@ -22,12 +22,6 @@ interface MediaItem {
     format: string;
     altText: string;
     path?: string;
-}
-
-interface MediaUsage {
-    id: string;
-    name: string;
-    path: string;
 }
 
 interface MediaParameter {
@@ -219,141 +213,6 @@ function getMediaParameters(item: MediaItem): MediaParameter[] {
             status: issues.includes('lowResolution') ? 'fail' : 'pass',
         },
     ];
-}
-
-function normalizeMediaIdForSearch(value: string) {
-    return value.replace(/[{}]/g, '').toLowerCase();
-}
-
-interface MediaUsageCandidate {
-    itemId: string;
-    name: string;
-    path: string;
-}
-
-function formatMediaGuidForSearch(item: MediaItem) {
-    const cleanId = item.id.replace(/[{}]/g, '').toLowerCase();
-    if (!/^[0-9a-f]{32}$/.test(cleanId)) {
-        return '';
-    }
-    return `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`;
-}
-
-async function searchMediaUsageCandidates(
-    client: ClientSDK,
-    appContext: ApplicationContext | undefined,
-    cleanId: string,
-    bracedId: string,
-    mediaName: string,
-): Promise<MediaUsageCandidate[]> {
-    const query = `
-    query MediaUsages {
-      search(
-        query: {
-          index: "sitecore_master_index"
-          latestVersionOnly: true
-          paging: { pageSize: 100, skip: 0 }
-          searchStatement: {
-            criteria: [
-              { field: "_content" value: "${bracedId}" criteriaType: CONTAINS operator: SHOULD }
-              { field: "_content" value: "${cleanId}" criteriaType: SEARCH operator: SHOULD }
-              { field: "_content" value: "${mediaName}" criteriaType: SEARCH operator: SHOULD }
-            ]
-          }
-        }
-      ) {
-        totalCount
-        results {
-          itemId
-          name
-          path
-          templateName
-        }
-      }
-    }
-  `;
-
-    const result = await client.mutate('xmc.authoring.graphql', {
-        params: {
-            query: getGraphqlQueryParams(appContext),
-            body: { query },
-        },
-    });
-
-    const data = result as {
-        data?: { search?: { results?: Array<{ itemId?: string; name?: string; path?: string }> } };
-    };
-
-    const seen = new Set<string>();
-    const candidates: MediaUsageCandidate[] = [];
-
-    for (const reference of data.data?.search?.results ?? []) {
-        const normalizedId = normalizeMediaIdForSearch(reference.itemId ?? '');
-        if (!normalizedId || seen.has(normalizedId)) {
-            continue;
-        }
-        seen.add(normalizedId);
-        candidates.push({
-            itemId: reference.itemId ?? '',
-            name: reference.name ?? 'Unknown item',
-            path: reference.path ?? '',
-        });
-    }
-
-    return candidates;
-}
-
-async function verifyMediaUsageCandidate(
-    client: ClientSDK,
-    appContext: ApplicationContext | undefined,
-    candidate: MediaUsageCandidate,
-    cleanId: string,
-    mediaNameCompact: string,
-): Promise<MediaUsage | null> {
-    try {
-        const fields = await fetchAllItemFields(client, candidate.itemId.replace(/[{}]/g, ''), appContext);
-        const isReference = fields.some((field) => {
-            const value = field.value.toLowerCase().replace(/[^a-z0-9]/g, '');
-            return value.includes(cleanId) || (mediaNameCompact.length >= 5 && value.includes(mediaNameCompact));
-        });
-
-        if (!isReference) {
-            return null;
-        }
-
-        return { id: candidate.itemId, name: candidate.name, path: candidate.path };
-    } catch (verifyError) {
-        console.warn(`Unable to verify usage candidate "${candidate.name}":`, verifyError);
-        return null;
-    }
-}
-
-async function fetchMediaUsages(
-    client: ClientSDK,
-    appContext: ApplicationContext | undefined,
-    item: MediaItem,
-): Promise<MediaUsage[]> {
-    const cleanId = item.id.replace(/[{}]/g, '').toLowerCase();
-    const bracedId = formatMediaGuidForSearch(item);
-    const mediaName = item.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    const mediaNameCompact = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    if (!bracedId || mediaNameCompact.length < 5) {
-        return [];
-    }
-
-    const candidates = await searchMediaUsageCandidates(client, appContext, cleanId, bracedId, mediaName);
-    const usages: MediaUsage[] = [];
-
-    for (let start = 0; start < candidates.length; start += 6) {
-        const batch = candidates.slice(start, start + 6);
-        const batchResults = await Promise.all(
-            batch.map((candidate) => verifyMediaUsageCandidate(client, appContext, candidate, cleanId, mediaNameCompact)),
-        );
-        usages.push(...batchResults.filter((usage): usage is MediaUsage => usage !== null));
-    }
-
-    return usages;
 }
 
 function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext, mediaOriginOverride = ''): MediaItem[] {
@@ -718,9 +577,6 @@ function StandaloneExtensionApp() {
     const [filter, setFilter] = useState<'all' | 'needsWork' | 'missingAlt' | 'largeImage'>('all');
     const [fileType, setFileType] = useState('all');
     const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
-    const [usages, setUsages] = useState<MediaUsage[]>([]);
-    const [isLoadingUsages, setIsLoadingUsages] = useState(false);
-    const [usagesError, setUsagesError] = useState('');
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
 
     useEffect(() => {
@@ -799,39 +655,6 @@ function StandaloneExtensionApp() {
             console.error('Error initializing Marketplace client:', error);
         }
     }, [error]);
-
-    useEffect(() => {
-        let isCancelled = false;
-
-        if (!selectedItem || !client) {
-            setUsages([]);
-            setUsagesError('');
-            return;
-        }
-
-        setIsLoadingUsages(true);
-        setUsagesError('');
-
-        fetchMediaUsages(client, appContext, selectedItem)
-            .then((results) => {
-                if (!isCancelled) {
-                    setUsages(results);
-                    setIsLoadingUsages(false);
-                }
-            })
-            .catch((usageError) => {
-                console.error('Error retrieving media usages:', usageError);
-                if (!isCancelled) {
-                    setUsages([]);
-                    setUsagesError('Unable to load the list of items using this image.');
-                    setIsLoadingUsages(false);
-                }
-            });
-
-        return () => {
-            isCancelled = true;
-        };
-    }, [selectedItem, client, appContext]);
 
     const analyzedItems = useMemo(
         () =>
@@ -1118,22 +941,6 @@ function StandaloneExtensionApp() {
                                         </div>
                                     ))}
                                 </div>
-
-                                <h4 style={styles.modalSectionTitle}>Used in</h4>
-                                {isLoadingUsages ? (
-                                    <p style={styles.modalHint}>Loading references...</p>
-                                ) : usages.length > 0 ? (
-                                    <ul style={styles.usageList}>
-                                        {usages.map((usage) => (
-                                            <li key={usage.id} style={styles.usageItem}>
-                                                <strong style={styles.usageName}>{usage.name}</strong>
-                                                <span style={styles.usagePath}>{usage.path}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p style={styles.modalHint}>{usagesError || 'No items are currently referencing this image.'}</p>
-                                )}
                             </div>
                         </div>
                     </div>
@@ -1527,38 +1334,6 @@ const styles: Record<string, CSSProperties> = {
         minWidth: '44px',
         padding: '3px 8px',
         textAlign: 'center',
-    },
-    usageList: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        listStyle: 'none',
-        margin: 0,
-        maxHeight: '180px',
-        overflowY: 'auto',
-        padding: 0,
-    },
-    usageItem: {
-        background: '#f8fafc',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2px',
-        padding: '10px 12px',
-    },
-    usageName: {
-        fontSize: '13px',
-    },
-    usagePath: {
-        color: '#64748b',
-        fontSize: '12px',
-        wordBreak: 'break-all',
-    },
-    modalHint: {
-        color: '#64748b',
-        fontSize: '13px',
-        margin: 0,
     },
 };
 
