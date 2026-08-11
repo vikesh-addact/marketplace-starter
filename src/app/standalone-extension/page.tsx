@@ -37,6 +37,12 @@ function getSitecoreContextId(appContext?: ApplicationContext) {
     return resource?.context?.preview ?? resource?.context?.live ?? resource?.resourceId ?? '';
 }
 
+function getEnvironmentLabel(appContext?: ApplicationContext) {
+    const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
+    const tenantName = resource?.tenantDisplayName ?? resource?.tenantName;
+    return tenantName || getSitecoreContextId(appContext);
+}
+
 function getGraphqlQueryParams(appContext?: ApplicationContext) {
     const sitecoreContextId = getSitecoreContextId(appContext);
     return sitecoreContextId ? { sitecoreContextId } : undefined;
@@ -569,6 +575,7 @@ function StandaloneExtensionApp() {
     const { client, error, isInitialized } = useMarketplaceClient();
     const { apiKey, mode, clearSavedKey, hasStoredKey } = useApiKey();
     const [appContext, setAppContext] = useState<ApplicationContext>();
+    const [siteName, setSiteName] = useState('');
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
     const [isLoadingMedia, setIsLoadingMedia] = useState(true);
     const [mediaLoadMessage, setMediaLoadMessage] = useState('');
@@ -616,10 +623,15 @@ function StandaloneExtensionApp() {
                       ? ((raw as Record<string, unknown>).data as Array<Record<string, unknown>>)
                       : [];
                 if (sites.length > 0) {
+                    const firstSite = sites[0] as Record<string, unknown> | undefined;
                     const thumbnailUrl = (sites[0] as Record<string, unknown>)?.thumbnail as Record<string, unknown> | undefined;
                     const url = thumbnailUrl?.url as string | undefined;
                     if (url) {
                         hostOrigin = new URL(url).origin;
+                    }
+                    const resolvedSiteName = (firstSite?.displayName as string | undefined) || (firstSite?.name as string | undefined) || '';
+                    if (resolvedSiteName) {
+                        setSiteName(resolvedSiteName);
                     }
                 }
             } catch (sitesError) {
@@ -762,7 +774,9 @@ function StandaloneExtensionApp() {
         <main style={styles.page}>
             <header style={styles.header}>
                 <div>
-                    <span style={styles.eyebrow}>{appContext?.name ?? 'Media Optimizer'}</span>
+                    <span style={styles.eyebrow}>
+                        {siteName || 'XM Cloud'} · {getEnvironmentLabel(appContext) || 'Environment'}
+                    </span>
                     <h1 style={styles.title}>Media Optimizer Dashboard</h1>
                     <p style={styles.subtitle}>Audit media quality, accessibility, and delivery readiness across your library.</p>
                 </div>
