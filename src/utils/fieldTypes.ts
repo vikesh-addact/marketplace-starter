@@ -35,10 +35,20 @@ export async function fetchAllItemFields(
     itemId: string,
     appContext?: ApplicationContext,
 ): Promise<FieldEntry[]> {
-    const query = `
+    const fields: FieldEntry[] = [];
+    let after: string | null = null;
+
+    do {
+        const afterClause = after ? `after: "${after}"` : '';
+        const query = `
     query AllItemFields {
-      item(where: { itemId: "{${itemId}}" }) {
-        fields(ownFields: true, excludeStandardFields: true) {
+      item(where: { database: "master", itemId: "{${itemId}}" }) {
+        fields(ownFields: true, excludeStandardFields: true, first: 100 ${afterClause}) {
+          totalCount
+          pageInfo {
+            hasNext
+            endCursor
+          }
           nodes {
             name
             value
@@ -48,18 +58,23 @@ export async function fetchAllItemFields(
     }
   `;
 
-    const result = await client.mutate('xmc.authoring.graphql', {
-        params: {
-            query: getQueryParams(appContext),
-            body: { query },
-        },
-    });
+        const result = await client.mutate('xmc.authoring.graphql', {
+            params: {
+                query: getQueryParams(appContext),
+                body: { query },
+            },
+        });
 
-    const data = unwrapData(result) as {
-        item?: { fields?: { nodes?: FieldEntry[] } };
-    };
+        const data = unwrapData(result) as {
+            item?: { fields?: { nodes?: FieldEntry[]; pageInfo?: { hasNext?: boolean; endCursor?: string } } };
+        };
 
-    return data?.item?.fields?.nodes ?? [];
+        fields.push(...(data?.item?.fields?.nodes ?? []));
+        const pageInfo = data?.item?.fields?.pageInfo;
+        after = pageInfo?.hasNext ? pageInfo?.endCursor ?? null : null;
+    } while (after);
+
+    return fields;
 }
 
 export function containsImageData(value: string): boolean {
