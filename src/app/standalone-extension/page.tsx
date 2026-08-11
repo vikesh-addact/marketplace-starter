@@ -32,6 +32,14 @@ interface MediaParameter {
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 const MIN_DIMENSION = 800;
 
+const GRADE_SCALE = [
+    { name: 'ALT text', criterion: 'Non-empty, descriptive ALT text', points: 25 },
+    { name: 'Aspect ratio', criterion: 'Width / height between 0.75 and 2.0', points: 15 },
+    { name: 'File size', criterion: 'Up to 1 MB (1024 KB)', points: 30 },
+    { name: 'Format', criterion: 'JPG, PNG, WebP, AVIF, or SVG', points: 20 },
+    { name: 'Resolution', criterion: 'Width and height of at least 800 px', points: 10 },
+];
+
 function getSitecoreContextId(appContext?: ApplicationContext) {
     const resource = appContext?.resourceAccess?.[0] ?? appContext?.resources?.[0];
     return resource?.context?.preview ?? resource?.context?.live ?? resource?.resourceId ?? '';
@@ -968,6 +976,18 @@ function StandaloneExtensionApp() {
                                         </div>
                                     ))}
                                 </div>
+
+                                <h4 style={styles.modalSectionTitle}>Grade scale</h4>
+                                <div style={styles.scaleList}>
+                                    {GRADE_SCALE.map((item) => (
+                                        <div key={item.name} style={styles.scaleRow}>
+                                            <span style={styles.parameterName}>{item.name}</span>
+                                            <span style={styles.scaleCriterion}>{item.criterion}</span>
+                                            <span style={styles.scalePoints}>{item.points} pts</span>
+                                        </div>
+                                    ))}
+                                    <div style={styles.scaleTotal}>Perfect score: 100 pts</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1320,6 +1340,38 @@ const styles: Record<string, CSSProperties> = {
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
+    },
+    scaleList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+    },
+    scaleRow: {
+        alignItems: 'center',
+        display: 'flex',
+        gap: '10px',
+        justifyContent: 'space-between',
+    },
+    scaleCriterion: {
+        color: '#475569',
+        flex: 1,
+        fontSize: '12px',
+    },
+    scalePoints: {
+        color: '#2563eb',
+        fontSize: '12px',
+        fontWeight: 700,
+        minWidth: '44px',
+        textAlign: 'right',
+    },
+    scaleTotal: {
+        borderTop: '1px solid #e2e8f0',
+        color: '#166534',
+        fontSize: '12px',
+        fontWeight: 700,
+        marginTop: '4px',
+        paddingTop: '8px',
+        textAlign: 'right',
     },
     parameterRow: {
         alignItems: 'center',
