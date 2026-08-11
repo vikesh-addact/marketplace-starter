@@ -775,7 +775,7 @@ function StandaloneExtensionApp() {
             <header style={styles.header}>
                 <div>
                     <span style={styles.eyebrow}>
-                        {siteName || 'XM Cloud'} · {getEnvironmentLabel(appContext) || 'Environment'}
+                        {siteName} · {getEnvironmentLabel(appContext)}
                     </span>
                     <h1 style={styles.title}>Media Optimizer Dashboard</h1>
                     <p style={styles.subtitle}>Audit media quality, accessibility, and delivery readiness across your library.</p>
@@ -930,7 +930,13 @@ function StandaloneExtensionApp() {
 
             {selectedItem && (
                 <div style={styles.modalOverlay} onClick={() => setSelectedItem(null)}>
-                    <div style={styles.modal} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Details for ${selectedItem.name}`}>
+                    <div
+                        style={styles.modal}
+                        onClick={(event) => event.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={`Details for ${selectedItem.name}`}
+                    >
                         <button aria-label="Close" onClick={() => setSelectedItem(null)} style={styles.modalClose} type="button">
                             x
                         </button>
