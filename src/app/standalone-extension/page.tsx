@@ -27,6 +27,7 @@ interface MediaItem {
 interface MediaParameter {
     name: string;
     value: string;
+    points: number;
     status: 'pass' | 'fail';
 }
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
@@ -209,26 +210,31 @@ function getMediaParameters(item: MediaItem): MediaParameter[] {
         {
             name: 'ALT text',
             value: item.altText || 'Missing',
+            points: 25,
             status: issues.includes('missingAlt') ? 'fail' : 'pass',
         },
         {
             name: 'Aspect ratio',
             value: ratio,
+            points: 15,
             status: issues.includes('badAspectRatio') ? 'fail' : 'pass',
         },
         {
             name: 'File size',
             value: formatSize(item.sizeKb),
+            points: 30,
             status: issues.includes('largeImage') ? 'fail' : 'pass',
         },
         {
             name: 'Format',
             value: item.format.toUpperCase(),
+            points: 20,
             status: issues.includes('unsupportedFormat') ? 'fail' : 'pass',
         },
         {
             name: 'Resolution',
             value: item.width > 0 && item.height > 0 ? `${item.width} x ${item.height}` : 'Unknown',
+            points: 10,
             status: issues.includes('lowResolution') ? 'fail' : 'pass',
         },
     ];
@@ -971,12 +977,17 @@ function StandaloneExtensionApp() {
                                 <h4 style={styles.modalSectionTitle}>Scoring parameters</h4>
                                 <div style={styles.parameterList}>
                                     {getMediaParameters(selectedItem).map((param) => (
-                                        <div key={param.name} style={styles.parameterRow}>
-                                            <span style={styles.parameterName}>{param.name}</span>
-                                            <span style={styles.parameterValue}>{param.value}</span>
-                                            <span style={param.status === 'pass' ? styles.passBadge : styles.failBadge}>
-                                                {param.status === 'pass' ? 'Pass' : 'Fail'}
-                                            </span>
+                                        <div key={param.name} style={param.status === 'pass' ? styles.parameterCardPass : styles.parameterCardFail}>
+                                            <div style={styles.parameterCardHeader}>
+                                                <span style={styles.parameterCardName}>{param.name}</span>
+                                                <span style={param.status === 'pass' ? styles.passBadge : styles.failBadge}>
+                                                    {param.status === 'pass' ? 'Pass' : 'Fail'}
+                                                </span>
+                                            </div>
+                                            <div style={styles.parameterCardFooter}>
+                                                <span style={styles.parameterCardValue}>{param.value}</span>
+                                                <span style={styles.parameterCardPoints}>{param.status === 'pass' ? param.points : 0} pts</span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -1158,7 +1169,7 @@ const styles: Record<string, CSSProperties> = {
         color: '#64748b',
         fontSize: '12px',
         padding: '13px',
-        textAlign: 'left',
+        textAlign: 'center',
         textTransform: 'uppercase',
     },
     tr: {
@@ -1435,24 +1446,57 @@ const styles: Record<string, CSSProperties> = {
         paddingTop: '8px',
         textAlign: 'right',
     },
-    parameterRow: {
-        alignItems: 'center',
-        display: 'flex',
-        gap: '10px',
-        justifyContent: 'space-between',
-    },
     parameterName: {
         color: '#64748b',
         fontSize: '13px',
         fontWeight: 600,
         minWidth: '92px',
     },
-    parameterValue: {
+    parameterCardPass: {
+        background: '#f0fdf4',
+        border: '1px solid #bbf7d0',
+        borderRadius: '10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        padding: '10px 12px',
+    },
+    parameterCardFail: {
+        background: '#fef2f2',
+        border: '1px solid #fecaca',
+        borderRadius: '10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        padding: '10px 12px',
+    },
+    parameterCardHeader: {
+        alignItems: 'center',
+        display: 'flex',
+        justifyContent: 'space-between',
+    },
+    parameterCardName: {
+        color: '#334155',
+        fontSize: '13px',
+        fontWeight: 700,
+    },
+    parameterCardFooter: {
+        alignItems: 'center',
+        display: 'flex',
+        gap: '10px',
+        justifyContent: 'space-between',
+    },
+    parameterCardValue: {
         color: '#172033',
         flex: 1,
         fontSize: '13px',
-        textAlign: 'right',
         wordBreak: 'break-all',
+    },
+    parameterCardPoints: {
+        color: '#64748b',
+        fontSize: '12px',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
     },
     passBadge: {
         background: '#dcfce7',
