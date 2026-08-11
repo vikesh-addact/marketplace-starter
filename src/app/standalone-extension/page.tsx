@@ -23,6 +23,18 @@ interface MediaItem {
     altText: string;
     path?: string;
 }
+
+interface MediaUsage {
+    id: string;
+    name: string;
+    path: string;
+}
+
+interface MediaParameter {
+    name: string;
+    value: string;
+    status: 'pass' | 'fail';
+}
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
 const MIN_DIMENSION = 800;
 
@@ -174,6 +186,102 @@ function formatIssue(issue: MediaIssue) {
 
 function formatSize(sizeKb: number) {
     return sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+}
+
+function getMediaParameters(item: MediaItem): MediaParameter[] {
+    const issues = getMediaIssues(item);
+    const ratio = item.width > 0 && item.height > 0 ? (item.width / item.height).toFixed(2) : 'Unknown';
+
+    return [
+        {
+            name: 'ALT text',
+            value: item.altText || 'Missing',
+            status: issues.includes('missingAlt') ? 'fail' : 'pass',
+        },
+        {
+            name: 'Aspect ratio',
+            value: ratio,
+            status: issues.includes('badAspectRatio') ? 'fail' : 'pass',
+        },
+        {
+            name: 'File size',
+            value: formatSize(item.sizeKb),
+            status: issues.includes('largeImage') ? 'fail' : 'pass',
+        },
+        {
+            name: 'Format',
+            value: item.format.toUpperCase(),
+            status: issues.includes('unsupportedFormat') ? 'fail' : 'pass',
+        },
+        {
+            name: 'Resolution',
+            value: item.width > 0 && item.height > 0 ? `${item.width} x ${item.height}` : 'Unknown',
+            status: issues.includes('lowResolution') ? 'fail' : 'pass',
+        },
+    ];
+}
+
+function normalizeMediaIdForSearch(value: string) {
+    return value.replace(/[{}]/g, '').toUpperCase();
+}
+
+async function fetchMediaUsages(
+    client: ClientSDK,
+    appContext: ApplicationContext | undefined,
+    item: MediaItem,
+): Promise<MediaUsage[]> {
+    const cleanId = item.id.replace(/[{}]/g, '');
+    const bracedId = /^[0-9a-fA-F]{32}$/.test(cleanId)
+        ? `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`
+        : item.id;
+
+    const query = `
+    query MediaUsages {
+      search(
+        query: {
+          index: "sitecore_master_index"
+          latestVersionOnly: true
+          paging: { pageSize: 100, skip: 0 }
+          searchStatement: {
+            criteria: [
+              { field: "_content" value: "${bracedId}" criteriaType: CONTAINS operator: SHOULD }
+              { field: "_content" value: "${cleanId}" criteriaType: CONTAINS operator: SHOULD }
+            ]
+          }
+        }
+      ) {
+        totalCount
+        results {
+          itemId
+          name
+          path
+          templateName
+        }
+      }
+    }
+  `;
+
+    const result = await client.mutate('xmc.authoring.graphql', {
+        params: {
+            query: getGraphqlQueryParams(appContext),
+            body: { query },
+        },
+    });
+
+    const data = result as {
+        data?: { search?: { results?: Array<{ itemId?: string; name?: string; path?: string }> } };
+    };
+
+    const results = data.data?.search?.results ?? [];
+    const targetId = normalizeMediaIdForSearch(item.id);
+
+    return results
+        .filter((reference) => reference.itemId && normalizeMediaIdForSearch(reference.itemId) !== targetId)
+        .map((reference) => ({
+            id: reference.itemId ?? '',
+            name: reference.name ?? 'Unknown item',
+            path: reference.path ?? '',
+        }));
 }
 
 function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext, mediaOriginOverride = ''): MediaItem[] {
@@ -537,6 +645,10 @@ function StandaloneExtensionApp() {
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<'all' | 'needsWork' | 'missingAlt' | 'largeImage'>('all');
     const [fileType, setFileType] = useState('all');
+    const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
+    const [usages, setUsages] = useState<MediaUsage[]>([]);
+    const [isLoadingUsages, setIsLoadingUsages] = useState(false);
+    const [usagesError, setUsagesError] = useState('');
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
 
     useEffect(() => {
@@ -615,6 +727,39 @@ function StandaloneExtensionApp() {
             console.error('Error initializing Marketplace client:', error);
         }
     }, [error]);
+
+    useEffect(() => {
+        let isCancelled = false;
+
+        if (!selectedItem || !client) {
+            setUsages([]);
+            setUsagesError('');
+            return;
+        }
+
+        setIsLoadingUsages(true);
+        setUsagesError('');
+
+        fetchMediaUsages(client, appContext, selectedItem)
+            .then((results) => {
+                if (!isCancelled) {
+                    setUsages(results);
+                    setIsLoadingUsages(false);
+                }
+            })
+            .catch((usageError) => {
+                console.error('Error retrieving media usages:', usageError);
+                if (!isCancelled) {
+                    setUsages([]);
+                    setUsagesError('Unable to load the list of items using this image.');
+                    setIsLoadingUsages(false);
+                }
+            });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [selectedItem, client, appContext]);
 
     const analyzedItems = useMemo(
         () =>
@@ -795,20 +940,27 @@ function StandaloneExtensionApp() {
                                     {filteredItems.map((item) => (
                                         <tr key={item.id} style={styles.tr}>
                                             <td style={styles.td}>
-                                                <div style={styles.mediaCell}>
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img
-                                                        alt={item.altText || item.name}
-                                                        decoding="async"
-                                                        loading="lazy"
-                                                        src={item.thumbnailUrl}
-                                                        style={styles.thumbnail}
-                                                    />
-                                                    <div>
-                                                        <strong>{item.name}</strong>
-                                                        <span style={styles.path}>{item.path}</span>
+                                                <button
+                                                    aria-label={`Open details for ${item.name}`}
+                                                    onClick={() => setSelectedItem(item)}
+                                                    style={styles.mediaButton}
+                                                    type="button"
+                                                >
+                                                    <div style={styles.mediaCell}>
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            alt={item.altText || item.name}
+                                                            decoding="async"
+                                                            loading="lazy"
+                                                            src={item.thumbnailUrl}
+                                                            style={styles.thumbnail}
+                                                        />
+                                                        <div>
+                                                            <strong>{item.name}</strong>
+                                                            <span style={styles.path}>{item.path}</span>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                </button>
                                             </td>
                                             <td style={styles.td}>
                                                 <span>
@@ -866,6 +1018,55 @@ function StandaloneExtensionApp() {
             )}
 
             {error && <p style={styles.error}>Error: {String(error)}</p>}
+
+            {selectedItem && (
+                <div style={styles.modalOverlay} onClick={() => setSelectedItem(null)}>
+                    <div style={styles.modal} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Details for ${selectedItem.name}`}>
+                        <button aria-label="Close" onClick={() => setSelectedItem(null)} style={styles.modalClose} type="button">
+                            x
+                        </button>
+                        <div style={styles.modalBody}>
+                            <div style={styles.modalMedia}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img alt={selectedItem.altText || selectedItem.name} src={selectedItem.thumbnailUrl} style={styles.modalImage} />
+                            </div>
+                            <div style={styles.modalDetails}>
+                                <h3 style={styles.modalName}>{selectedItem.name}</h3>
+                                <p style={styles.modalPath}>{selectedItem.path || selectedItem.name}</p>
+
+                                <h4 style={styles.modalSectionTitle}>Scoring parameters</h4>
+                                <div style={styles.parameterList}>
+                                    {getMediaParameters(selectedItem).map((param) => (
+                                        <div key={param.name} style={styles.parameterRow}>
+                                            <span style={styles.parameterName}>{param.name}</span>
+                                            <span style={styles.parameterValue}>{param.value}</span>
+                                            <span style={param.status === 'pass' ? styles.passBadge : styles.failBadge}>
+                                                {param.status === 'pass' ? 'Pass' : 'Fail'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <h4 style={styles.modalSectionTitle}>Used in</h4>
+                                {isLoadingUsages ? (
+                                    <p style={styles.modalHint}>Loading references...</p>
+                                ) : usages.length > 0 ? (
+                                    <ul style={styles.usageList}>
+                                        {usages.map((usage) => (
+                                            <li key={usage.id} style={styles.usageItem}>
+                                                <strong style={styles.usageName}>{usage.name}</strong>
+                                                <span style={styles.usagePath}>{usage.path}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p style={styles.modalHint}>{usagesError || 'No items are currently referencing this image.'}</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
@@ -1113,6 +1314,179 @@ const styles: Record<string, CSSProperties> = {
     },
     error: {
         color: '#b91c1c',
+    },
+    mediaButton: {
+        background: 'transparent',
+        border: 'none',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        padding: '4px',
+        textAlign: 'left',
+        width: '100%',
+    },
+    modalOverlay: {
+        alignItems: 'center',
+        background: 'rgba(15, 23, 42, 0.55)',
+        bottom: 0,
+        display: 'flex',
+        justifyContent: 'center',
+        left: 0,
+        padding: '24px',
+        position: 'fixed',
+        right: 0,
+        top: 0,
+        zIndex: 50,
+    },
+    modal: {
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: '12px',
+        boxShadow: '0 24px 60px rgba(15, 23, 42, 0.25)',
+        maxHeight: '90vh',
+        maxWidth: '920px',
+        overflowY: 'auto',
+        padding: '24px',
+        position: 'relative',
+        width: '100%',
+    },
+    modalClose: {
+        background: '#f1f5f9',
+        border: '1px solid #e2e8f0',
+        borderRadius: '999px',
+        color: '#475569',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: 700,
+        height: '32px',
+        lineHeight: 1,
+        position: 'absolute',
+        right: '16px',
+        top: '16px',
+        width: '32px',
+        zIndex: 1,
+    },
+    modalBody: {
+        alignItems: 'start',
+        display: 'grid',
+        gap: '24px',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    },
+    modalMedia: {
+        alignItems: 'center',
+        background: '#f1f5f9',
+        border: '1px solid #e2e8f0',
+        borderRadius: '10px',
+        display: 'flex',
+        justifyContent: 'center',
+        minHeight: '260px',
+        overflow: 'hidden',
+    },
+    modalImage: {
+        height: 'auto',
+        maxHeight: '420px',
+        objectFit: 'contain',
+        width: '100%',
+    },
+    modalDetails: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        minWidth: 0,
+    },
+    modalName: {
+        fontSize: '20px',
+        margin: 0,
+    },
+    modalPath: {
+        color: '#64748b',
+        fontSize: '13px',
+        margin: 0,
+        wordBreak: 'break-all',
+    },
+    modalSectionTitle: {
+        color: '#475569',
+        fontSize: '12px',
+        fontWeight: 700,
+        margin: '12px 0 0',
+        textTransform: 'uppercase',
+    },
+    parameterList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+    },
+    parameterRow: {
+        alignItems: 'center',
+        display: 'flex',
+        gap: '10px',
+        justifyContent: 'space-between',
+    },
+    parameterName: {
+        color: '#64748b',
+        fontSize: '13px',
+        fontWeight: 600,
+        minWidth: '92px',
+    },
+    parameterValue: {
+        color: '#172033',
+        flex: 1,
+        fontSize: '13px',
+        textAlign: 'right',
+        wordBreak: 'break-all',
+    },
+    passBadge: {
+        background: '#dcfce7',
+        border: '1px solid #86efac',
+        borderRadius: '999px',
+        color: '#166534',
+        fontSize: '11px',
+        fontWeight: 700,
+        minWidth: '44px',
+        padding: '3px 8px',
+        textAlign: 'center',
+    },
+    failBadge: {
+        background: '#fee2e2',
+        border: '1px solid #fecaca',
+        borderRadius: '999px',
+        color: '#991b1b',
+        fontSize: '11px',
+        fontWeight: 700,
+        minWidth: '44px',
+        padding: '3px 8px',
+        textAlign: 'center',
+    },
+    usageList: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        listStyle: 'none',
+        margin: 0,
+        maxHeight: '180px',
+        overflowY: 'auto',
+        padding: 0,
+    },
+    usageItem: {
+        background: '#f8fafc',
+        border: '1px solid #e2e8f0',
+        borderRadius: '8px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        padding: '10px 12px',
+    },
+    usageName: {
+        fontSize: '13px',
+    },
+    usagePath: {
+        color: '#64748b',
+        fontSize: '12px',
+        wordBreak: 'break-all',
+    },
+    modalHint: {
+        color: '#64748b',
+        fontSize: '13px',
+        margin: 0,
     },
 };
 
