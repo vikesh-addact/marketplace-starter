@@ -1452,14 +1452,15 @@ const styles: Record<string, CSSProperties> = {
         color: '#172033',
         flex: 1,
         fontSize: '13px',
-        textAlign: 'right',
+        textAlign: 'center',
         wordBreak: 'break-all',
     },
     parameterRow: {
         alignItems: 'center',
+        borderBottom: '1px solid #000000',
         display: 'flex',
-        gap: '10px',
-        justifyContent: 'space-between',
+        gap: '12px',
+        padding: '8px 0',
     },
     passBadge: {
         background: '#dcfce7',
