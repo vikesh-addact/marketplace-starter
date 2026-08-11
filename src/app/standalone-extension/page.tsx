@@ -244,6 +244,7 @@ async function searchMediaUsageCandidates(
     appContext: ApplicationContext | undefined,
     cleanId: string,
     bracedId: string,
+    mediaName: string,
 ): Promise<MediaUsageCandidate[]> {
     const query = `
     query MediaUsages {
@@ -256,6 +257,7 @@ async function searchMediaUsageCandidates(
             criteria: [
               { field: "_content" value: "${bracedId}" criteriaType: CONTAINS operator: SHOULD }
               { field: "_content" value: "${cleanId}" criteriaType: SEARCH operator: SHOULD }
+              { field: "_content" value: "${mediaName}" criteriaType: SEARCH operator: SHOULD }
             ]
           }
         }
@@ -306,12 +308,13 @@ async function verifyMediaUsageCandidate(
     appContext: ApplicationContext | undefined,
     candidate: MediaUsageCandidate,
     cleanId: string,
+    mediaNameCompact: string,
 ): Promise<MediaUsage | null> {
     try {
         const fields = await fetchAllItemFields(client, candidate.itemId.replace(/[{}]/g, ''), appContext);
         const isReference = fields.some((field) => {
-            const value = field.value.toLowerCase().replace(/[{}\s-]/g, '');
-            return value.includes(cleanId);
+            const value = field.value.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return value.includes(cleanId) || (mediaNameCompact.length >= 5 && value.includes(mediaNameCompact));
         });
 
         if (!isReference) {
@@ -332,18 +335,20 @@ async function fetchMediaUsages(
 ): Promise<MediaUsage[]> {
     const cleanId = item.id.replace(/[{}]/g, '').toLowerCase();
     const bracedId = formatMediaGuidForSearch(item);
+    const mediaName = item.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const mediaNameCompact = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    if (!bracedId) {
+    if (!bracedId || mediaNameCompact.length < 5) {
         return [];
     }
 
-    const candidates = await searchMediaUsageCandidates(client, appContext, cleanId, bracedId);
+    const candidates = await searchMediaUsageCandidates(client, appContext, cleanId, bracedId, mediaName);
     const usages: MediaUsage[] = [];
 
     for (let start = 0; start < candidates.length; start += 6) {
         const batch = candidates.slice(start, start + 6);
         const batchResults = await Promise.all(
-            batch.map((candidate) => verifyMediaUsageCandidate(client, appContext, candidate, cleanId)),
+            batch.map((candidate) => verifyMediaUsageCandidate(client, appContext, candidate, cleanId, mediaNameCompact)),
         );
         usages.push(...batchResults.filter((usage): usage is MediaUsage => usage !== null));
     }
