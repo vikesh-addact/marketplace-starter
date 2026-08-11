@@ -597,6 +597,7 @@ function StandaloneExtensionApp() {
     const [filter, setFilter] = useState<'all' | 'needsWork' | 'missingAlt' | 'largeImage'>('all');
     const [fileType, setFileType] = useState('all');
     const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
+    const [isGradeScaleOpen, setIsGradeScaleOpen] = useState(false);
     const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
 
     useEffect(() => {
@@ -796,6 +797,9 @@ function StandaloneExtensionApp() {
                     <p style={styles.subtitle}>Audit media quality, accessibility, and delivery readiness across your library.</p>
                 </div>
                 <div style={styles.headerRight}>
+                    <button onClick={() => setIsGradeScaleOpen(true)} style={styles.gradeScaleButton} type="button">
+                        Grade Scale
+                    </button>
                     {hasStoredKey && (
                         <button onClick={clearSavedKey} style={styles.clearKeyButton} title="Remove the saved Gemini API key from this browser." type="button">
                             Clear saved API key
@@ -976,20 +980,37 @@ function StandaloneExtensionApp() {
                                         </div>
                                     ))}
                                 </div>
-
-                                <h4 style={styles.modalSectionTitle}>Grade scale</h4>
-                                <div style={styles.scaleList}>
-                                    {GRADE_SCALE.map((item) => (
-                                        <div key={item.name} style={styles.scaleRow}>
-                                            <span style={styles.parameterName}>{item.name}</span>
-                                            <span style={styles.scaleCriterion}>{item.criterion}</span>
-                                            <span style={styles.scalePoints}>{item.points} pts</span>
-                                        </div>
-                                    ))}
-                                    <div style={styles.scaleTotal}>Perfect score: 100 pts</div>
-                                </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {isGradeScaleOpen && (
+                <div style={styles.modalOverlay} onClick={() => setIsGradeScaleOpen(false)}>
+                    <div
+                        style={styles.gradeModal}
+                        onClick={(event) => event.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Grade scale"
+                    >
+                        <button aria-label="Close" onClick={() => setIsGradeScaleOpen(false)} style={styles.modalClose} type="button">
+                            x
+                        </button>
+                        <h3 style={styles.gradeModalTitle}>Grade scale</h3>
+                        <p style={styles.gradeModalSubtitle}>How each media item earns its optimization score</p>
+                        <div style={styles.scaleList}>
+                            {GRADE_SCALE.map((item) => (
+                                <div key={item.name} style={styles.scaleRow}>
+                                    <span style={styles.parameterName}>{item.name}</span>
+                                    <span style={styles.scaleCriterion}>{item.criterion}</span>
+                                    <span style={styles.scalePoints}>{item.points} pts</span>
+                                </div>
+                            ))}
+                            <div style={styles.scaleTotal}>Perfect score: 100 pts</div>
+                        </div>
+                        <p style={styles.gradeModalNote}>Ideal proportions of values are based on Desktop.</p>
                     </div>
                 </div>
             )}
@@ -1056,6 +1077,16 @@ const styles: Record<string, CSSProperties> = {
         border: '1px solid #fecaca',
         borderRadius: '999px',
         color: '#b91c1c',
+        cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: 600,
+        padding: '8px 12px',
+    },
+    gradeScaleButton: {
+        background: '#ffffff',
+        border: '1px solid #bfdbfe',
+        borderRadius: '999px',
+        color: '#1d4ed8',
         cursor: 'pointer',
         fontSize: '12px',
         fontWeight: 600,
@@ -1290,6 +1321,37 @@ const styles: Record<string, CSSProperties> = {
         top: '16px',
         width: '32px',
         zIndex: 1,
+    },
+    gradeModal: {
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: '12px',
+        boxShadow: '0 24px 60px rgba(15, 23, 42, 0.25)',
+        maxHeight: '90vh',
+        maxWidth: '520px',
+        overflowY: 'auto',
+        padding: '28px',
+        position: 'relative',
+        width: '100%',
+    },
+    gradeModalTitle: {
+        fontSize: '22px',
+        margin: '0 0 4px',
+    },
+    gradeModalSubtitle: {
+        color: '#64748b',
+        fontSize: '14px',
+        margin: '0 0 18px',
+    },
+    gradeModalNote: {
+        background: '#eff6ff',
+        border: '1px solid #bfdbfe',
+        borderRadius: '8px',
+        color: '#1d4ed8',
+        fontSize: '13px',
+        fontWeight: 600,
+        margin: '18px 0 0',
+        padding: '10px 12px',
     },
     modalBody: {
         alignItems: 'start',
