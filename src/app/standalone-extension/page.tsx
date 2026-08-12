@@ -890,7 +890,7 @@ function StandaloneExtensionApp() {
                                                     </div>
                                                 </button>
                                             </td>
-                                            <td style={styles.td}>
+                                            <td style={styles.tdCenter}>
                                                 <span>
                                                     w {item.width} × h {item.height}
                                                 </span>
@@ -912,7 +912,7 @@ function StandaloneExtensionApp() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td style={styles.td}>
+                                            <td style={styles.tdCenter}>
                                                 <ScoreBadge score={item.score} />
                                             </td>
                                             <td style={styles.td}>
