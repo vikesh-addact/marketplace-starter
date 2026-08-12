@@ -6,7 +6,7 @@ import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-mark
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
-import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
+import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME, formatItemIdForGraphql, resolveItemLanguage } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
@@ -202,16 +202,6 @@ function getCurrentPageInfo(context?: PagesContext) {
 
 function normalizeItemId(value: string) {
     return value.replace(/[{}]/g, '').toUpperCase();
-}
-
-function formatItemIdForGraphql(value: string) {
-    const cleanId = value.replace(/[{}-]/g, '');
-
-    if (/^[0-9a-fA-F]{32}$/.test(cleanId)) {
-        return `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`;
-    }
-
-    return value.startsWith('{') ? value : `{${value}}`;
 }
 
 function extractItemIdsFromValue(value: string) {
@@ -724,34 +714,8 @@ function parseImageFieldToReference(value: string, fieldName: string): MediaRefe
     return null;
 }
 
-async function getMediaItemLanguage(client: ClientSDK, appContext: ApplicationContext | undefined, itemId: string): Promise<string | undefined> {
-    const query = `
-      query MediaItemLanguage($itemId: ID!) {
-        item(where: { itemId: $itemId }) {
-          language {
-            name
-          }
-        }
-      }
-    `;
-
-    const result = await client.mutate('xmc.authoring.graphql', {
-        params: {
-            query: getGraphqlQueryParams(appContext),
-            body: {
-                query,
-                variables: { itemId: formatItemIdForGraphql(itemId) },
-            },
-        },
-    });
-
-    const graphQlResult = result as { data?: { data?: { item?: { language?: { name?: string } } } } };
-
-    return graphQlResult.data?.data?.item?.language?.name;
-}
-
 async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext | undefined, item: PageMediaItem, altText: string) {
-    const language = await getMediaItemLanguage(client, appContext, item.id);
+    const language = await resolveItemLanguage(client, item.id, appContext);
 
     const mutation = `
       mutation UpdateMediaAlt($itemId: ID!, $altText: String!, $language: String) {

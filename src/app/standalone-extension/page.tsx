@@ -6,7 +6,7 @@ import type { ApplicationContext, ClientSDK } from '@sitecore-marketplace-sdk/cl
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
-import { MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME } from '@/src/utils/fieldTypes';
+import { ALT_FIELD_NAME, MEDIA_DETAIL_FIELDS, formatItemIdForGraphql, resolveItemLanguage } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
@@ -22,6 +22,7 @@ interface MediaItem {
     format: string;
     altText: string;
     path?: string;
+    language?: string;
 }
 
 interface MediaParameter {
@@ -89,44 +90,8 @@ async function canWriteToClipboard() {
     return true;
 }
 
-function formatItemIdForGraphql(value: string) {
-    const cleanId = value.replace(/[{}-]/g, '');
-
-    if (/^[0-9a-fA-F]{32}$/.test(cleanId)) {
-        return `{${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(12, 16)}-${cleanId.slice(16, 20)}-${cleanId.slice(20)}}`;
-    }
-
-    return value.startsWith('{') ? value : `{${value}}`;
-}
-
-async function getMediaItemLanguage(client: ClientSDK, appContext: ApplicationContext | undefined, itemId: string): Promise<string | undefined> {
-    const query = `
-    query MediaItemLanguage($itemId: ID!) {
-      item(where: { itemId: $itemId }) {
-        language {
-          name
-        }
-      }
-    }
-  `;
-
-    const result = await client.mutate('xmc.authoring.graphql', {
-        params: {
-            query: getGraphqlQueryParams(appContext),
-            body: {
-                query,
-                variables: { itemId: formatItemIdForGraphql(itemId) },
-            },
-        },
-    });
-
-    const graphQlResult = result as { data?: { data?: { item?: { language?: { name?: string } } } } };
-
-    return graphQlResult.data?.data?.item?.language?.name;
-}
-
 async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext | undefined, item: MediaItem, altText: string) {
-    const language = await getMediaItemLanguage(client, appContext, item.id);
+    const language = await resolveItemLanguage(client, item.id, appContext, item.language);
 
     const mutation = `
     mutation UpdateMediaAlt($itemId: ID!, $altText: String!, $language: String) {
@@ -271,6 +236,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
         name?: string;
         path?: string;
         templateName?: string;
+        language?: { name?: string };
         innerItem?: InnerItem | null;
     };
 
@@ -431,6 +397,7 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
                 format: ext,
                 altText: getField('Alt'),
                 path: result.path,
+                language: result.language?.name,
             };
         })
         .filter((item) => ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg', 'gif'].includes(item.format) && !item.name.toLowerCase().startsWith('thumbnail'));
@@ -466,6 +433,9 @@ function buildMediaSearchQuery(pageSize: number, skip: number) {
           name
           path
           templateName
+          language {
+            name
+          }
 
           innerItem {
             url
