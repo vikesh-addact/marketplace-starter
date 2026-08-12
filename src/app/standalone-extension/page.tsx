@@ -99,13 +99,42 @@ function formatItemIdForGraphql(value: string) {
     return value.startsWith('{') ? value : `{${value}}`;
 }
 
-async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext, item: MediaItem, altText: string) {
+async function getMediaItemLanguage(client: ClientSDK, appContext: ApplicationContext | undefined, itemId: string): Promise<string | undefined> {
+    const query = `
+    query MediaItemLanguage($itemId: ID!) {
+      item(where: { itemId: $itemId }) {
+        language {
+          name
+        }
+      }
+    }
+  `;
+
+    const result = await client.mutate('xmc.authoring.graphql', {
+        params: {
+            query: getGraphqlQueryParams(appContext),
+            body: {
+                query,
+                variables: { itemId: formatItemIdForGraphql(itemId) },
+            },
+        },
+    });
+
+    const graphQlResult = result as { data?: { data?: { item?: { language?: { name?: string } } } } };
+
+    return graphQlResult.data?.data?.item?.language?.name;
+}
+
+async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext | undefined, item: MediaItem, altText: string) {
+    const language = await getMediaItemLanguage(client, appContext, item.id);
+
     const mutation = `
-    mutation UpdateMediaAlt($itemId: ID!, $altText: String!) {
+    mutation UpdateMediaAlt($itemId: ID!, $altText: String!, $language: String) {
       updateItem(
         input: {
           database: "master"
           itemId: $itemId
+          language: $language
           fields: [{ name: "${ALT_FIELD_NAME}", value: $altText, reset: false }]
         }
       ) {
@@ -127,6 +156,7 @@ async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext,
                 variables: {
                     itemId: formatItemIdForGraphql(item.id),
                     altText,
+                    language,
                 },
             },
         },
