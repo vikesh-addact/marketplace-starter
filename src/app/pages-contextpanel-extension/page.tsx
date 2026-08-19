@@ -6,7 +6,14 @@ import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-mark
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
-import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME, formatItemIdForGraphql, resolveItemLanguage } from '@/src/utils/fieldTypes';
+import {
+    fetchAllItemFields,
+    containsImageData,
+    MEDIA_DETAIL_FIELDS,
+    ALT_FIELD_NAME,
+    formatItemIdForGraphql,
+    resolveItemLanguage,
+} from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
@@ -583,7 +590,7 @@ function createItemsFieldsQuery(aliasPrefix: string, itemIds: string[]) {
               itemId
               name
               path
-              fields(ownFields: true, excludeStandardFields: true) {
+              fields {
                 nodes {
                   name
                   value
