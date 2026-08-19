@@ -417,7 +417,7 @@ function buildMediaSearchQuery(pageSize: number, skip: number) {
           paging: { pageSize: ${pageSize}, skip: ${skip} }
           searchStatement: {
             criteria: [
-              { field: "_path" value: "90ae357f61714ea9808c5600b678f726" criteriaType: EXACT operator: MUST }
+              { field: "_path" value: "249FC44A-FFE8-4363-A182-A70C388DF9B2" criteriaType: EXACT operator: MUST }
               { field: "_templatename" value: "Image" criteriaType: EXACT operator: SHOULD }
               { field: "_templatename" value: "Jpeg" criteriaType: EXACT operator: SHOULD }
               { field: "_templatename" value: "Png" criteriaType: EXACT operator: SHOULD }
