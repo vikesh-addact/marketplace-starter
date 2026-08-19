@@ -789,7 +789,7 @@ function StandaloneExtensionApp() {
             <header style={styles.header}>
                 <div>
                     <span style={styles.eyebrow}>
-                        {siteName || getEnvironmentLabel(appContext) ? `${siteName} · ${getEnvironmentLabel(appContext)}` : '\u00A0'}
+                        {'\u00A0'}
                     </span>
                     <h1 style={styles.title}>Media Optimizer Dashboard</h1>
                     <p style={styles.subtitle}>Audit media quality, accessibility, and delivery readiness across your library.</p>
