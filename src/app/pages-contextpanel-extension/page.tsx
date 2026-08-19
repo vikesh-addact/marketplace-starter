@@ -273,9 +273,13 @@ function extractDataSourceReferences(context?: PagesContext): DataSourceReferenc
         references.push({ id: normalizedId, source });
     }
 
-    presentationDetails?.devices?.forEach((device) => {
-        device.renderings?.forEach((rendering) => {
+    console.log('[MediaOptimizer] extractDataSourceReferences: devices count =', presentationDetails?.devices?.length ?? 0);
+
+    presentationDetails?.devices?.forEach((device, di) => {
+        console.log(`[MediaOptimizer] device ${di}: renderings count =`, device.renderings?.length ?? 0);
+        device.renderings?.forEach((rendering, ri) => {
             const renderingSource = rendering.placeholderKey || rendering.instanceId || 'rendering';
+            console.log(`[MediaOptimizer] rendering ${ri} (${renderingSource}): dataSource =`, rendering.dataSource);
             addDataSource(rendering.dataSource ?? '', `Data source / ${renderingSource}`);
 
             const parameters = (rendering as Record<string, unknown>).parameters;
@@ -313,6 +317,7 @@ function extractDataSourceReferences(context?: PagesContext): DataSourceReferenc
         });
     });
 
+    console.log('[MediaOptimizer] extractDataSourceReferences: returning', references.length, 'references:', references.map(r => ({ id: r.id, path: r.path, source: r.source })));
     return references;
 }
 
@@ -681,6 +686,7 @@ function createPathItemQuery(aliasPrefix: string, paths: string[]) {
       `).join('\n')}
     }
   `;
+    console.log('[MediaOptimizer] createPathItemQuery: query for', paths.length, 'paths:', paths);
     return query;
 }
 
@@ -714,6 +720,7 @@ async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: Da
     // 2. Fetch path-based data sources
     if (pathSources.length > 0) {
         const query = createPathItemQuery('pathSource', pathSources.map(ds => ds.path!));
+        console.log('[MediaOptimizer] path query:', query);
         const result = await client.mutate('xmc.authoring.graphql', {
             params: {
                 query: getGraphqlQueryParams(appContext),
@@ -721,16 +728,24 @@ async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: Da
             },
         });
         const itemsByAlias = unwrapGraphqlData(result);
+        console.log('[MediaOptimizer] path query result keys:', Object.keys(itemsByAlias), 'full:', JSON.stringify(itemsByAlias).substring(0, 1000));
         pathSources.forEach((ds, i) => {
-            allItems[`item${allSources.length}`] = itemsByAlias[`pathSource${i}`];
+            const itemKey = `pathSource${i}`;
+            const targetKey = `item${allSources.length}`;
+            console.log(`[MediaOptimizer] mapping pathSource${i} -> item${allSources.length}: path=${ds.path}, item=`, itemsByAlias[itemKey]);
+            allItems[targetKey] = itemsByAlias[itemKey];
             allSources.push(ds);
         });
     }
 
     // 3. Extract media references
     const referencedItemIds = new Set<string>();
+    console.log('[MediaOptimizer] extracting media from', allSources.length, 'items:', allSources.map((ds, i) => ({ path: ds.path, id: ds.id, hasItem: !!allItems[`item${i}`] })));
     const directReferences = allSources.flatMap((ds, index) => {
-        const extracted = extractMediaReferencesFromDataSource(allItems[`item${index}`], ds.source);
+        const item = allItems[`item${index}`];
+        console.log(`[MediaOptimizer] item${index}:`, item ? JSON.stringify(item).substring(0, 300) : 'null/undefined');
+        const extracted = extractMediaReferencesFromDataSource(item, ds.source);
+        console.log(`[MediaOptimizer] item${index} extracted:`, extracted.references.length, 'refs,', extracted.referencedItemIds.length, 'child ids');
         extracted.referencedItemIds.forEach(id => referencedItemIds.add(id));
         return extracted.references;
     });
