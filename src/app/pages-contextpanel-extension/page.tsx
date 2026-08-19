@@ -652,7 +652,7 @@ function createItemsFieldsQuery(aliasPrefix: string, itemIds: string[]) {
               itemId
               name
               path
-              fields(ownFields: true, excludeStandardFields: true) {
+              fields {
                 nodes {
                   name
                   value
@@ -676,7 +676,7 @@ function createPathItemQuery(aliasPrefix: string, paths: string[]) {
           itemId
           name
           path
-          fields(ownFields: true, excludeStandardFields: true) {
+          fields {
             nodes {
               name
               value
