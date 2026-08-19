@@ -35,6 +35,7 @@ interface MediaReference {
 
 interface DataSourceReference {
     id: string;
+    path?: string;
     source: string;
 }
 
@@ -253,14 +254,20 @@ function extractDataSourceReferences(context?: PagesContext): DataSourceReferenc
     const seen = new Set<string>();
 
     function addDataSource(value: string, source: string) {
-        if (!value) {
+        if (!value) return;
+
+        // Path-based data source (e.g. /sitecore/content/...)
+        if (value.startsWith('/')) {
+            if (!seen.has(value)) {
+                seen.add(value);
+                references.push({ id: '', path: value, source });
+            }
             return;
         }
 
+        // GUID-based data source
         const normalizedId = normalizeItemId(value);
-        if (!/^[0-9A-F-]{36}$/i.test(normalizedId) || seen.has(normalizedId)) {
-            return;
-        }
+        if (!/^[0-9A-F-]{36}$/i.test(normalizedId) || seen.has(normalizedId)) return;
 
         seen.add(normalizedId);
         references.push({ id: normalizedId, source });
@@ -270,6 +277,39 @@ function extractDataSourceReferences(context?: PagesContext): DataSourceReferenc
         device.renderings?.forEach((rendering) => {
             const renderingSource = rendering.placeholderKey || rendering.instanceId || 'rendering';
             addDataSource(rendering.dataSource ?? '', `Data source / ${renderingSource}`);
+
+            const parameters = (rendering as Record<string, unknown>).parameters;
+            if (typeof parameters === 'string' && parameters) {
+                const parameterRefs = extractItemIdsFromValue(parameters);
+                parameterRefs.forEach((id) => {
+                    const normalizedId = normalizeItemId(id);
+                    if (/^[0-9A-F-]{36}$/i.test(normalizedId) && !seen.has(normalizedId)) {
+                        seen.add(normalizedId);
+                        references.push({ id: normalizedId, source: `Rendering parameters / ${renderingSource}` });
+                    }
+                });
+
+                const parameterUrls = parameters.match(/(?:https?:\/\/|\/)[^\s"'<>]+\.(?:avif|gif|jpe?g|png|svg|webp)(?:\?[^\s"'<>]*)?/gi) ?? [];
+                parameterUrls.forEach((url) => {
+                    const uniqueKey = url;
+                    if (!seen.has(uniqueKey)) {
+                        seen.add(uniqueKey);
+                        references.push({ id: url, source: `Rendering parameters / ${renderingSource}` });
+                    }
+                });
+
+                if (/<image\s/i.test(parameters)) {
+                    const mediaId = readAttribute(parameters, 'mediaid');
+                    const src = readAttribute(parameters, 'src');
+                    if (mediaId || src) {
+                        const normalizedMediaId = mediaId ? normalizeMediaId(mediaId) : src;
+                        if (!seen.has(normalizedMediaId)) {
+                            seen.add(normalizedMediaId);
+                            references.push({ id: normalizedMediaId, source: `Rendering parameters / ${renderingSource}` });
+                        }
+                    }
+                }
+            }
         });
     });
 
@@ -528,7 +568,17 @@ function extractMediaReferencesFromDataSource(item: unknown, fallbackSource: str
             );
 
             if (!mediaId && !url && urls.length === 0) {
-                extractItemIdsFromValue(value).forEach((itemId) => referencedItemIds.add(itemId));
+                extractItemIdsFromValue(value).forEach((itemId) => {
+                    referencedItemIds.add(itemId);
+                    addReference({
+                        id: itemId,
+                        url: '',
+                        altText: '',
+                        width: 0,
+                        height: 0,
+                        source: `${source} / ${fieldName}`,
+                    });
+                });
             }
 
             return;
@@ -559,6 +609,20 @@ function extractMediaReferencesFromDataSource(item: unknown, fallbackSource: str
                     height: Number(valueRecord.height) || 0,
                     source: `${source} / ${fieldName}`,
                 });
+            }
+
+            if (!id && !isMediaUrl) {
+                const rawId = safeText(valueRecord.id) || safeText(valueRecord.itemId) || safeText(valueRecord.value);
+                if (rawId && /^[0-9a-fA-F-]{32,36}$/.test(rawId.replace(/[{}]/g, ''))) {
+                    addReference({
+                        id: normalizeItemId(rawId),
+                        url: '',
+                        altText: safeText(valueRecord.alt) || safeText(valueRecord.altText),
+                        width: Number(valueRecord.width) || 0,
+                        height: Number(valueRecord.height) || 0,
+                        source: `${source} / ${fieldName}`,
+                    });
+                }
             }
 
             Object.entries(valueRecord).forEach(([key, entry]) => inspectValue(entry, key));
@@ -599,28 +663,75 @@ function createItemsFieldsQuery(aliasPrefix: string, itemIds: string[]) {
     return query;
 }
 
+function createPathItemQuery(aliasPrefix: string, paths: string[]) {
+    const query = `
+    query DataSourceByPath {
+      ${paths.map((path, index) => `
+        ${aliasPrefix}${index}: item(where: { database: "master", path: "${path}" }) {
+          itemId
+          name
+          path
+          fields(ownFields: true, excludeStandardFields: true) {
+            nodes {
+              name
+              value
+            }
+          }
+        }
+      `).join('\n')}
+    }
+  `;
+    return query;
+}
+
 async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: DataSourceReference[], language?: string, appContext?: ApplicationContext) {
     if (dataSources.length === 0) {
         return [];
     }
 
-    const query = createItemsFieldsQuery(
-        'dataSource',
-        dataSources.map((dataSource) => dataSource.id),
-    );
+    const guidSources = dataSources.filter(ds => ds.id);
+    const pathSources = dataSources.filter(ds => ds.path && !ds.id);
 
-    const result = await client.mutate('xmc.authoring.graphql', {
-        params: {
-            query: getGraphqlQueryParams(appContext),
-            body: { query },
-        },
-    });
+    const allItems: Record<string, unknown> = {};
+    const allSources: DataSourceReference[] = [];
 
-    const itemsByAlias = unwrapGraphqlData(result) as Record<string, unknown>;
+    // 1. Fetch GUID-based data sources
+    if (guidSources.length > 0) {
+        const query = createItemsFieldsQuery('dataSource', guidSources.map(ds => ds.id));
+        const result = await client.mutate('xmc.authoring.graphql', {
+            params: {
+                query: getGraphqlQueryParams(appContext),
+                body: { query },
+            },
+        });
+        const itemsByAlias = unwrapGraphqlData(result);
+        guidSources.forEach((ds, i) => {
+            allItems[`item${i}`] = itemsByAlias[`dataSource${i}`];
+            allSources.push(ds);
+        });
+    }
+
+    // 2. Fetch path-based data sources
+    if (pathSources.length > 0) {
+        const query = createPathItemQuery('pathSource', pathSources.map(ds => ds.path!));
+        const result = await client.mutate('xmc.authoring.graphql', {
+            params: {
+                query: getGraphqlQueryParams(appContext),
+                body: { query },
+            },
+        });
+        const itemsByAlias = unwrapGraphqlData(result);
+        pathSources.forEach((ds, i) => {
+            allItems[`item${allSources.length}`] = itemsByAlias[`pathSource${i}`];
+            allSources.push(ds);
+        });
+    }
+
+    // 3. Extract media references
     const referencedItemIds = new Set<string>();
-    const directReferences = dataSources.flatMap((dataSource, index) => {
-        const extracted = extractMediaReferencesFromDataSource(itemsByAlias[`dataSource${index}`], dataSource.source);
-        extracted.referencedItemIds.forEach((itemId) => referencedItemIds.add(itemId));
+    const directReferences = allSources.flatMap((ds, index) => {
+        const extracted = extractMediaReferencesFromDataSource(allItems[`item${index}`], ds.source);
+        extracted.referencedItemIds.forEach(id => referencedItemIds.add(id));
         return extracted.references;
     });
 
@@ -628,6 +739,7 @@ async function fetchDataSourceMediaReferences(client: ClientSDK, dataSources: Da
         return directReferences;
     }
 
+    // 4. Child resolution
     const childIds = Array.from(referencedItemIds);
     const childResult = await client.mutate('xmc.authoring.graphql', {
         params: {
