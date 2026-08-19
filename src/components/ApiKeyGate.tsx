@@ -88,8 +88,7 @@ function ApiKeyPrompt({ onSave, onUseStatic }: { onSave: (key: string, remember:
                 <span style={styles.badge}>ALT generation setup</span>
                 <h1 style={styles.title}>Generate ALT text for your images</h1>
                 <p style={styles.copy}>
-                    Media Optimizer creates descriptive ALT text for your images. Provide a Gemini API key (free or paid) for AI-generated text, or use the
-                    built-in static generator that derives text from the media item name.
+                    Media Optimizer creates descriptive ALT text for your images. Provide a Gemini API key (free or paid) for AI-generated text, or use the built-in static generator that derives text from the media item name.
                 </p>
 
                 <label style={styles.label} htmlFor="gemini-api-key">
@@ -130,11 +129,10 @@ function ApiKeyPrompt({ onSave, onUseStatic }: { onSave: (key: string, remember:
                 </div>
 
                 <button onClick={onUseStatic} style={styles.staticButton} type="button">
-                    Don&apos;t have an API key - use static ALT generation
+                    Don&apos;t have an API key — use static ALT generation
                 </button>
                 <p style={styles.footnote}>
-                    Static ALT text is derived from the media item&apos;s name (for example, <em>Skeidar Fana black and white</em> becomes{' '}
-                    <em>Image of Skeidar Fana black and white</em>). No API key is stored or sent anywhere.
+                    Static ALT text is derived from the media item&apos;s name (for example, <em>Skeidar Fana black and white</em> becomes <em>Image of Skeidar Fana black and white</em>). No API key is stored or sent anywhere.
                 </p>
             </form>
         </div>
