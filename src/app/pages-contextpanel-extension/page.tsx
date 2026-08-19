@@ -6,7 +6,14 @@ import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-mark
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
-import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME, formatItemIdForGraphql, resolveItemLanguage } from '@/src/utils/fieldTypes';
+import {
+    fetchAllItemFields,
+    containsImageData,
+    MEDIA_DETAIL_FIELDS,
+    ALT_FIELD_NAME,
+    formatItemIdForGraphql,
+    resolveItemLanguage,
+} from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
@@ -118,7 +125,26 @@ function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = 
         return '';
     }
 
-    if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
+    if (url.startsWith('data:')) {
+        return url;
+    }
+
+    if (/^https?:\/\//i.test(url)) {
+        if (!mediaOrigin) {
+            return url;
+        }
+
+        try {
+            const parsed = new URL(url);
+            const expectedOrigin = new URL(mediaOrigin).origin;
+
+            if (parsed.origin !== expectedOrigin) {
+                return `${expectedOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+            }
+        } catch {
+            // If mediaOrigin is not a valid URL, return the original
+        }
+
         return url;
     }
 
@@ -583,7 +609,7 @@ function createItemsFieldsQuery(aliasPrefix: string, itemIds: string[]) {
               itemId
               name
               path
-              fields(ownFields: true, excludeStandardFields: true) {
+              fields {
                 nodes {
                   name
                   value

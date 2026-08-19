@@ -264,7 +264,27 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
             return '';
         }
 
-        if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
+        if (url.startsWith('data:')) {
+            return url;
+        }
+
+        if (/^https?:\/\//i.test(url)) {
+            const origin = mediaOrigin || resolveOrigin(appContext?.url);
+            if (!origin) {
+                return url;
+            }
+
+            try {
+                const parsed = new URL(url);
+                const expectedOrigin = new URL(origin).origin;
+
+                if (parsed.origin !== expectedOrigin) {
+                    return `${expectedOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+                }
+            } catch {
+                // If origin is not a valid URL, return the original
+            }
+
             return url;
         }
 
@@ -359,9 +379,9 @@ function mapGraphqlMediaItems(payload: unknown, appContext?: ApplicationContext,
             }
         }
 
-        // If the url is absolute but does NOT contain media-library, return as-is
+        // If the url is absolute but does NOT contain media-library, let toMediaUrl handle domain rewriting
         if (url && /^https?:\/\//i.test(url) && !isSitecoreMediaLibraryUrl(url)) {
-            return url;
+            return toMediaUrl(url, resolvedOrigin, appContext);
         }
 
         const normalizedUrl = toMediaUrl(url, resolvedOrigin, appContext);
