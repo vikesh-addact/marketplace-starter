@@ -66,7 +66,7 @@ export function containsImageData(value: string): boolean {
     if (!value) return false;
     if (/<image\s/i.test(value)) return true;
     if (/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(value)) return true;
-    if (value.includes('/-/media/') || value.includes('/-/jssmedia/')) return true;
+    if (value.includes('/-/media/')) return true;
     return false;
 }
 

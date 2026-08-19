@@ -119,18 +119,7 @@ function toMediaUrl(url: string, appContext?: ApplicationContext, mediaOrigin = 
         return '';
     }
 
-    if (url.startsWith('data:')) {
-        return url;
-    }
-
-    if (/^https?:\/\//i.test(url)) {
-        if (url.includes('/-/media/') || url.includes('/-/jssmedia/')) {
-            const pathIndex = url.indexOf('/-/');
-            const mediaPath = url.slice(pathIndex).replace('/-/media/', '/-/jssmedia/');
-            if (mediaOrigin) {
-                return `${mediaOrigin}${mediaPath}`;
-            }
-        }
+    if (/^https?:\/\//i.test(url) || url.startsWith('data:')) {
         return url;
     }
 
@@ -363,7 +352,7 @@ function extractPageMediaReferences(context?: PagesContext): MediaReference[] {
             return;
         }
 
-        if (resolvedUrl && !/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(resolvedUrl) && !resolvedUrl.includes('/-/media/') && !resolvedUrl.includes('/-/jssmedia/')) {
+        if (resolvedUrl && !/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(resolvedUrl) && !resolvedUrl.includes('/-/media/')) {
             return;
         }
 
@@ -448,12 +437,12 @@ function hasMediaLocator(reference: MediaReference) {
         (/^https?:\/\//i.test(reference.url) ||
             reference.url.startsWith('/') ||
             /\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(reference.url) ||
-            reference.url.includes('/-/media/') || reference.url.includes('/-/jssmedia/')),
+            reference.url.includes('/-/media/')),
     );
 }
 
 function mapGraphqlMediaDetails(payload: unknown, references: MediaReference[], appContext?: ApplicationContext, fallbackMediaOrigin = ''): PageMediaItem[] {
-    const mediaOrigin = fallbackMediaOrigin || getMediaOrigin(references);
+    const mediaOrigin = getMediaOrigin(references) || fallbackMediaOrigin;
     type MediaDetailRecord = Record<string, { value?: string } | undefined>;
     const itemsById = unwrapGraphqlData(payload) as Record<
         string,
@@ -609,7 +598,7 @@ function extractMediaReferencesFromDataSource(item: unknown, fallbackSource: str
                 safeText(valueRecord.thumbnailUrl) ||
                 safeText(valueRecord.imageUrl) ||
                 safeText(valueRecord.url);
-            const isMediaUrl = /\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(url) || url.includes('/-/media/') || url.includes('/-/jssmedia/');
+            const isMediaUrl = /\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(url) || url.includes('/-/media/');
 
             if (id || isMediaUrl) {
                 addReference({
@@ -823,7 +812,7 @@ function parseImageFieldToReference(value: string, fieldName: string): MediaRefe
         };
     }
 
-    if (/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(value) || value.includes('/-/media/') || value.includes('/-/jssmedia/')) {
+    if (/\.(avif|gif|jpe?g|png|svg|webp)(\?|$)/i.test(value) || value.includes('/-/media/')) {
         return {
             id: value,
             url: value,
