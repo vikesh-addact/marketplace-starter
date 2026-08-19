@@ -417,7 +417,7 @@ function buildMediaSearchQuery(pageSize: number, skip: number) {
           paging: { pageSize: ${pageSize}, skip: ${skip} }
           searchStatement: {
             criteria: [
-              { field: "_path" value: "249FC44A-FFE8-4363-A182-A70C388DF9B2" criteriaType: EXACT operator: MUST }
+              { field: "_path" value: "249fc44affe84363a182a70c388df9b2" criteriaType: EXACT operator: MUST }
               { field: "_templatename" value: "Image" criteriaType: EXACT operator: SHOULD }
               { field: "_templatename" value: "Jpeg" criteriaType: EXACT operator: SHOULD }
               { field: "_templatename" value: "Png" criteriaType: EXACT operator: SHOULD }
@@ -789,9 +789,7 @@ function StandaloneExtensionApp() {
             <header style={styles.header}>
                 <div>
                     <span style={styles.eyebrow}>
-                        {siteName || getEnvironmentLabel(appContext)
-                            ? `${siteName} · ${getEnvironmentLabel(appContext)}`
-                            : '\u00A0'}
+                        {siteName || getEnvironmentLabel(appContext) ? `${siteName} · ${getEnvironmentLabel(appContext)}` : '\u00A0'}
                     </span>
                     <h1 style={styles.title}>Media Optimizer Dashboard</h1>
                     <p style={styles.subtitle}>Audit media quality, accessibility, and delivery readiness across your library.</p>
@@ -988,13 +986,7 @@ function StandaloneExtensionApp() {
 
             {isGradeScaleOpen && (
                 <div style={styles.modalOverlay} onClick={() => setIsGradeScaleOpen(false)}>
-                    <div
-                        style={styles.gradeModal}
-                        onClick={(event) => event.stopPropagation()}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label="Grade scale"
-                    >
+                    <div style={styles.gradeModal} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Grade scale">
                         <button aria-label="Close" onClick={() => setIsGradeScaleOpen(false)} style={styles.modalClose} type="button">
                             x
                         </button>
