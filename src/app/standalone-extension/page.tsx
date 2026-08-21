@@ -31,7 +31,7 @@ interface MediaParameter {
     status: 'pass' | 'fail';
 }
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
-const MIN_DIMENSION = 800;
+const MIN_DIMENSION = 500;
 
 const GRADE_SCALE = [
     { name: 'ALT text', criterion: 'Non-empty, descriptive ALT text', points: 25 },

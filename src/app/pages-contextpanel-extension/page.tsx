@@ -6,7 +6,14 @@ import type { ApplicationContext, ClientSDK, PagesContext } from '@sitecore-mark
 import { useMarketplaceClient } from '@/src/utils/hooks/useMarketplaceClient';
 import { generateAltText, generateStaticAltText } from '@/src/utils/generateAltText';
 import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
-import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME, formatItemIdForGraphql, resolveItemLanguage } from '@/src/utils/fieldTypes';
+import {
+    fetchAllItemFields,
+    containsImageData,
+    MEDIA_DETAIL_FIELDS,
+    ALT_FIELD_NAME,
+    formatItemIdForGraphql,
+    resolveItemLanguage,
+} from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
 type MediaAction = 'alt' | 'copyPath';
@@ -45,7 +52,7 @@ interface HostStateContext {
 }
 
 const supportedFormats = ['jpg', 'jpeg', 'png', 'webp', 'avif', 'svg'];
-const MIN_DIMENSION = 800;
+const MIN_DIMENSION = 500;
 
 function buildContentEditorUrl(item: PageMediaItem, origin: string) {
     if (!origin) {
