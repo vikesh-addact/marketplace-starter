@@ -9,7 +9,7 @@ import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { ALT_FIELD_NAME, MEDIA_DETAIL_FIELDS, formatItemIdForGraphql, resolveItemLanguage } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
-type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath' | 'copyId';
+type MediaAction = 'alt' | 'copyPath';
 type ActionState = 'idle' | 'working' | 'done' | 'failed';
 
 interface MediaItem {
@@ -70,24 +70,6 @@ function openContentEditor(item: MediaItem, mediaHostOrigin: string) {
     const editorUrl = buildContentEditorUrl(item, mediaHostOrigin);
     window.open(editorUrl, '_blank', 'noopener');
     return editorUrl;
-}
-
-async function canWriteToClipboard() {
-    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
-        return false;
-    }
-
-    if (navigator.permissions && typeof navigator.permissions.query === 'function') {
-        try {
-            const status = await navigator.permissions.query({ name: 'clipboard-write' as PermissionName });
-            return status.state === 'granted' || status.state === 'prompt';
-        } catch {
-            // If permission query is not available due to environment restrictions,
-            // fall back to attempting clipboard write and handle failures.
-        }
-    }
-
-    return true;
 }
 
 async function updateMediaAlt(client: ClientSDK, appContext: ApplicationContext | undefined, item: MediaItem, altText: string) {
@@ -542,24 +524,6 @@ async function loadRemainderSequential(
     return dedupeMediaItems(items);
 }
 
-async function mockOptimizeMedia(item: MediaItem, action: MediaAction): Promise<MediaItem> {
-    await new Promise((resolve) => setTimeout(resolve, 450));
-
-    if (action === 'optimize') {
-        return { ...item, sizeKb: Math.max(80, Math.round(item.sizeKb * 0.62)) };
-    }
-
-    if (action === 'webp') {
-        return { ...item, format: 'webp', sizeKb: Math.max(70, Math.round(item.sizeKb * 0.55)) };
-    }
-
-    if (action === 'alt') {
-        return { ...item, altText: item.altText || `Descriptive image for ${item.name}` };
-    }
-
-    return { ...item, width: 1600, height: 900 };
-}
-
 function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
     return (
         <div style={styles.summaryCard}>
@@ -757,31 +721,6 @@ function StandaloneExtensionApp() {
             }
             return;
         }
-
-        if (action === 'copyId') {
-            try {
-                const clipboardAvailable = await canWriteToClipboard();
-                if (!clipboardAvailable) {
-                    throw new Error('Clipboard write not available in this environment.');
-                }
-
-                await navigator.clipboard.writeText(item.id);
-                setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
-            } catch (actionError) {
-                console.error('Error copying ID:', actionError);
-                setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
-            }
-            return;
-        }
-
-        try {
-            const updatedItem = await mockOptimizeMedia(item, action);
-            setMediaItems((current) => current.map((mediaItem) => (mediaItem.id === itemId ? updatedItem : mediaItem)));
-            setActionStates((current) => ({ ...current, [actionKey]: 'done' }));
-        } catch (actionError) {
-            console.error(`Error performing action ${action}:`, actionError);
-            setActionStates((current) => ({ ...current, [actionKey]: 'failed' }));
-        }
     }
 
     return (
@@ -918,12 +857,6 @@ function StandaloneExtensionApp() {
                                                         state={actionStates[`${item.id}-alt`] ?? 'idle'}
                                                         onClick={() => runAction(item.id, 'alt')}
                                                     />
-                                                    {/* <ActionButton
-                                                        label="Optimize"
-                                                        disabled
-                                                        state={actionStates[`${item.id}-optimize`] ?? 'idle'}
-                                                        onClick={() => runAction(item.id, 'optimize')}
-                                                    /> */}
                                                     <ActionButton
                                                         label="Open editor"
                                                         state={actionStates[`${item.id}-copyPath`] ?? 'idle'}

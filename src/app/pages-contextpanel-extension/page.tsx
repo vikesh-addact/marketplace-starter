@@ -9,7 +9,7 @@ import { ApiKeyGate, useApiKey } from '@/src/components/ApiKeyGate';
 import { fetchAllItemFields, containsImageData, MEDIA_DETAIL_FIELDS, ALT_FIELD_NAME, formatItemIdForGraphql, resolveItemLanguage } from '@/src/utils/fieldTypes';
 
 type MediaIssue = 'missingAlt' | 'largeImage' | 'badAspectRatio' | 'unsupportedFormat' | 'lowResolution';
-type MediaAction = 'optimize' | 'webp' | 'alt' | 'aspect' | 'copyPath';
+type MediaAction = 'alt' | 'copyPath';
 type ActionState = 'idle' | 'working' | 'done' | 'failed';
 
 interface PageMediaItem {
@@ -1007,11 +1007,6 @@ function PagesContextPanelApp() {
             return;
         }
 
-        if (action !== 'alt') {
-            setActionMessage('Optimize, WebP, and ratio changes require a media upload/replacement API. ALT updates are persisted through Authoring GraphQL.');
-            return;
-        }
-
         setActionStates((current) => ({ ...current, [actionKey]: 'working' }));
         setActionMessage('');
 
@@ -1095,13 +1090,6 @@ function PagesContextPanelApp() {
                                     )}
 
                                     <div style={styles.actions}>
-                                        {/* <ActionButton
-                                            disabled
-                                            label="Optimize"
-                                            state={actionStates[`${item.id}-optimize`] ?? 'idle'}
-                                            title="Requires media upload/replacement API"
-                                            onClick={() => runAction(item.id, 'optimize')}
-                                        /> */}
                                         <ActionButton
                                             label="ALT"
                                             disabled={actionStates[`${item.id}-alt`] === 'working' || actionStates[`${item.id}-alt`] === 'done'}
