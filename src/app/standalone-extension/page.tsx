@@ -38,7 +38,7 @@ const GRADE_SCALE = [
     { name: 'Aspect ratio', criterion: 'Width / height between 0.75 and 2.0', points: 15 },
     { name: 'File size', criterion: 'Up to 1 MB (1024 KB)', points: 30 },
     { name: 'Format', criterion: 'JPG, PNG, WebP, AVIF, or SVG', points: 20 },
-    { name: 'Resolution', criterion: 'Width and height of at least 800 px', points: 10 },
+    { name: 'Resolution', criterion: 'Width and height of at least 500 px', points: 10 },
 ];
 
 function getSitecoreContextId(appContext?: ApplicationContext) {
